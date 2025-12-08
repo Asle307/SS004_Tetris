@@ -107,15 +107,10 @@ bool canMove(int dx, int dy){
 }
 
 void removeLine(){
-    //  ** SV5 fixes here **
-    // if (speed > 60)
-    //     speed -= 20;
-
-    // ** SV2 fixes here **
     for(int i = H - 2; i > 0; i--){
         for(int j = 1; j < W-1; j++){
             if(board[i][j] == ' '){
-                break;
+                return;
             }
         }
         for(int k = i ; k > 0 ; k--){
