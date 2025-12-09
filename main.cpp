@@ -37,7 +37,7 @@ char blocks[][4][4] = {
 };
 
 int x=4,y=0,b=1;
-int speed = 200;    
+int speed = 400;    
 void gotoxy(int x, int y) {
     COORD c = {x, y};
     SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
@@ -107,7 +107,7 @@ bool canMove(int dx, int dy){
 }
 void SpeedIncrement()
 {
-    speed = max(100, speed - 5);
+    speed = max(100, speed - 30);
 }
 void removeLine(){
     for(int i = H - 2; i > 0; i--){
