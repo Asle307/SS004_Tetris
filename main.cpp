@@ -37,7 +37,7 @@ char blocks[][4][4] = {
 };
 
 int x=4,y=0,b=1;
-int speed = 200;    
+int speed = 400;    
 void gotoxy(int x, int y) {
     COORD c = {x, y};
     SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
@@ -105,31 +105,37 @@ bool canMove(int dx, int dy){
             }
     return true;
 }
-
+void SpeedIncrement()
+{
+    speed = max(100, speed - 30);
+}
 void removeLine(){
     for(int i = H - 2; i > 0; i--){
+        bool isFull = true;
         for(int j = 1; j < W-1; j++){
             if(board[i][j] == ' '){
-                return;
+                isFull = false;
             }
         }
-        for(int k = i ; k > 0 ; k--){
-            for(int j = 1; j < W-1; j++){
-                // if the line is the first one => it only remove that line
-                if(k != 1){
-                    board[k][j] = board[k-1][j];
-                }
-                else{
-                    board[k][j] = ' ';
+        if(isFull){
+            for(int k = i ; k > 0 ; k--){
+                for(int j = 1; j < W-1; j++){
+                    // if the line is the first one => it only remove that line
+                    if(k != 1){
+                        board[k][j] = board[k-1][j];
+                    }
+                    else{
+                        board[k][j] = ' ';
+                    }
                 }
             }
+            i++;
+             //recheck: whether the new line is full
+            
         }
-        //recheck: whether the new line is full
-        i++;
-        if (speed < 400){
-            speed += 50;
-        }
+       
     }
+    SpeedIncrement();
 }
 
 void rotateBlock() {
