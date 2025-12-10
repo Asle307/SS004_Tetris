@@ -129,13 +129,13 @@ void removeLine(){
                     }
                 }
             }
+            //recheck: whether the new line is full
             i++;
-             //recheck: whether the new line is full
             
+            SpeedIncrement();
         }
        
     }
-    SpeedIncrement();
 }
 
 void rotateBlock() {
