@@ -1,5 +1,5 @@
 #include <SFML/Graphics.hpp> // Thư viện đồ họa SFML
-#include <SFML/Audio.hpp>   // Thư viện âm thanh SFML
+#include <SFML/Audio.hpp>
 #include <vector>
 #include <ctime>
 #include <algorithm>      // Thêm để đảm bảo hàm max() hoạt động
@@ -7,8 +7,8 @@
 using namespace std;
 using namespace sf; // Sử dụng namespace của SFML
 
-#define H 20
-#define W 15
+const int H = 20; 
+const int W = 15; 
 
 // KHAI BÁO KÍCH THƯỚC MỘT Ô GẠCH (PIXEL)
 const int TILE_SIZE = 30; 
@@ -153,7 +153,6 @@ void initBoard() {
             if ((i == H - 1) || (j == 0) || (j == W - 1)) board[i][j] = '#';
             else board[i][j] = ' ';
 }
-
 bool canMove(int dx, int dy) {
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
@@ -198,14 +197,120 @@ void removeLine(){
     }
 }
 
+Color getColor(char c) {
+    switch (c) {
+        case 'I': return Color::Cyan;
+        case 'J': return Color::Blue;
+        case 'L': return Color(255, 165, 0);
+        case 'O': return Color::Yellow;
+        case 'S': return Color::Green;
+        case 'T': return Color(128, 0, 128);
+        case 'Z': return Color::Red;
+        case '#': return Color(100, 100, 100);
+        default:  return Color::Black;
+    }
+}
+
 // --- VÒNG LẶP CHÍNH (SẼ ĐƯỢC VIẾT LẠI HOÀN TOÀN Ở BƯỚC 2.2) ---
 
 int main()
 {
     // --- KHAI BÁO BAN ĐẦU (GIỮ NGUYÊN) ---
+    RenderWindow window(VideoMode(Vector2u(W * TILE_SIZE, H * TILE_SIZE)),"SS008");
     srand(time(0));
     currentPiece = createRandomPiece();
     initBoard();
+    Clock clock;
+    while(window.isOpen()) {
+        // ================= EVENT =================
+        while (auto event = window.pollEvent())
+        {
+            if (event->is<Event::Closed>()) window.close();
+            
+        }
+
+        // ================= TIME =================
+        float dt = clock.getElapsedTime().asMilliseconds();
+
+        // ================= INPUT =================
+        if (Keyboard::isKeyPressed(Keyboard::Key::A) && canMove(-1, 0))
+            x--;
+
+        if (Keyboard::isKeyPressed(Keyboard::Key::D) && canMove(1, 0))
+            x++;
+
+        if (Keyboard::isKeyPressed(Keyboard::Key::S) && canMove(0, 1))
+            y++;
+
+        if (Keyboard::isKeyPressed(Keyboard::Key::W))
+            currentPiece->rotate(x, y);
+
+
+        // ================= GRAVITY =================
+        if (dt > speed)
+        {
+            clock.restart();
+
+            if (canMove(0, 1))
+            {
+                y++;
+            }
+            else
+            {
+                block2Board();
+                removeLine();
+                
+                delete currentPiece;
+                currentPiece = createRandomPiece();
+
+                x = 4;
+                y = 0;
+            }
+        }
+
+        window.clear(Color::Black);
+
+        // Vẽ board
+        for (int i = 0; i < H; i++)
+        {
+            for (int j = 0; j < W; j++)
+            {
+                if (board[i][j] != ' ')
+                {
+                    RectangleShape rect(
+                        Vector2f(TILE_SIZE - 1, TILE_SIZE - 1)
+                    );
+                    rect.setPosition(
+                        Vector2f( j * TILE_SIZE,  i * TILE_SIZE)
+                    );
+                    rect.setFillColor(getColor(board[i][j]));
+                    window.draw(rect);
+                }
+            }
+        }
+
+        // Vẽ block đang rơi
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                if (currentPiece->shape[i][j] != ' ')
+                {
+                    RectangleShape rect(
+                        Vector2f(TILE_SIZE - 1, TILE_SIZE - 1)
+                    );
+                    rect.setPosition(
+                        Vector2f( (x + j) * TILE_SIZE,  (y + i) * TILE_SIZE)
+                    );
+                    rect.setFillColor(
+                        getColor(currentPiece->shape[i][j])
+                    );
+                    window.draw(rect);
+                }
+            }
+        }
+        window.display();
+    }
     
     // Ở bước 2.2, chúng ta sẽ thay thế toàn bộ vòng lặp while(1) cũ bằng:
     // 1. Tạo RenderWindow
