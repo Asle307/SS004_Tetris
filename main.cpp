@@ -140,13 +140,94 @@ public:
 };
 
 // --- SIDE BAR UI ---
+// Draw UI
+struct SidebarUI {
+    float x, y, w, h;
+    float pad;
+    float boxW;
+
+    sf::FloatRect scoreBox;
+    sf::FloatRect levelBox;
+    sf::FloatRect linesBox;
+    sf::FloatRect nextBox;
+};
+
+static SidebarUI makeSidebarUI() {
+    SidebarUI ui{};
+    ui.x = (float)PLAY_W_PX;
+    ui.y = 0.f;
+    ui.w = (float)SIDEBAR_W;
+    ui.h = (float)PLAY_H_PX;
+
+    ui.pad  = 10.f;
+    ui.boxW = ui.w - 2.f * ui.pad;
+
+    const float boxH = 90.f;
+    const float gap  = 30.f;
+    const float left = ui.x + ui.pad;
+
+    ui.scoreBox = sf::FloatRect({left, 20.f},               {ui.boxW, boxH});
+    ui.levelBox = sf::FloatRect({left, 20.f + boxH + gap},  {ui.boxW, boxH});
+    ui.linesBox = sf::FloatRect({left, 20.f + 2*(boxH+gap)},{ui.boxW, boxH});
+    ui.nextBox  = sf::FloatRect({left, 20.f + 3*(boxH+gap)},{ui.boxW, 220.f});
+
+    return ui;
+}
+
+static void drawPanel(sf::RenderWindow& window, const sf::FloatRect& r) {
+    sf::RectangleShape box(r.size);
+    box.setPosition(r.position);
+    box.setFillColor(sf::Color::Black);
+    box.setOutlineThickness(3.f);
+    box.setOutlineColor(sf::Color(200, 200, 200));
+    window.draw(box);
+}
+
+static void drawText(sf::RenderWindow& window, const sf::Font& font, const std::string& s, float x, float y, unsigned size) {
+    sf::Text t(font, s, size);
+    t.setFillColor(sf::Color::White);
+    t.setPosition({x, y});
+    window.draw(t);
+}
+
+static void drawNextPreviewStub(sf::RenderWindow& window, const SidebarUI& ui) {
+    const float innerPad = 16.f;
+
+    sf::FloatRect area(
+        { ui.nextBox.position.x + innerPad, ui.nextBox.position.y + 60.f },
+        { ui.nextBox.size.x - 2.f * innerPad, ui.nextBox.size.y - 80.f }
+    );
+
+    sf::RectangleShape r(area.size);
+    r.setPosition(area.position);
+    r.setFillColor(sf::Color::Transparent);
+    r.setOutlineThickness(1.f);
+    r.setOutlineColor(sf::Color(80, 80, 80));
+    window.draw(r);
+}
+
+static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui) {
+    sf::RectangleShape bg({ui.w, ui.h});
+    bg.setPosition({ui.x, ui.y});
+    bg.setFillColor(sf::Color(30, 30, 30));
+    window.draw(bg);
+
+    drawPanel(window, ui.scoreBox);
+    drawPanel(window, ui.levelBox);
+    drawPanel(window, ui.linesBox);
+    drawPanel(window, ui.nextBox);
+
+    drawNextPreviewStub(window, ui); 
+}
 
 // --- GAME LOGIC ---
 
 
-
-
-
+// sidebar UI properties 
+int gScore = 0;
+int gLines = 0;
+int gLevel = 1;
+//
 
 Piece* currentPiece = nullptr;
 
@@ -255,6 +336,7 @@ Color getColor(char c) {
 int main() {
     RenderWindow window(VideoMode(Vector2u(PLAY_W_PX + SIDEBAR_W, PLAY_H_PX)), "SS008 - Tetris");
     window.setFramerateLimit(60);
+    SidebarUI ui = makeSidebarUI();
 
     // Load Audio
     if (!bgMusic.openFromFile("loop_theme.wav")) return -1;
@@ -266,20 +348,19 @@ int main() {
     bgMusic.play();
 
     // Init Game
-    srand(time(0));
+    srand((unsigned)time(0));
     currentPiece = createRandomPiece();
     initBoard();
 
     Clock clock;
-    float timer = 0;
-    float inputTimer = 0;
+    float timer = 0.f;
+    float inputTimer = 0.f;
     const float inputDelay = 0.1f;
 
     while (window.isOpen()) {
-        float time = clock.getElapsedTime().asSeconds();
-        clock.restart();
-        timer += time;
-        inputTimer += time;
+        float dt = clock.restart().asSeconds();
+        timer += dt;
+        inputTimer += dt;
 
         // --- EVENTS ---
         while (const auto event = window.pollEvent()) {
@@ -288,16 +369,12 @@ int main() {
             }
 
             if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                // Rotate
                 if (keyPressed->code == Keyboard::Key::W) {
                     currentPiece->rotate(x, y);
                 }
-                // Hard Drop
                 else if (keyPressed->code == Keyboard::Key::Space) {
-                    while (canMove(0, 1)) {
-                        y++;
-                    }
-                    timer = gameDelay + 10.0f; // Force lock immediately
+                    while (canMove(0, 1)) y++;
+                    timer = gameDelay + 10.0f; // force lock
                 }
             }
         }
@@ -306,13 +383,15 @@ int main() {
         if (inputTimer > inputDelay) {
             if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
                 if (canMove(-1, 0)) x--;
-                inputTimer = 0;
-            } else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
+                inputTimer = 0.f;
+            }
+            else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
                 if (canMove(1, 0)) x++;
-                inputTimer = 0;
-            } else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
+                inputTimer = 0.f;
+            }
+            else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
                 if (canMove(0, 1)) y++;
-                inputTimer = 0;
+                inputTimer = 0.f;
             }
         }
 
@@ -328,26 +407,25 @@ int main() {
 
                 delete currentPiece;
                 currentPiece = createRandomPiece();
-                x = 4; 
+                x = 4;
                 y = 0;
 
-                // Game Over Check
                 if (!canMove(0, 0)) {
                     window.close();
                 }
             }
-            timer = 0;
+            timer = 0.f;
         }
 
-        // --- RENDER ---
+        // --- RENDER (ONLY ONCE) ---
         window.clear(Color::Black);
 
         // Draw Board
         for (int i = 0; i < H; i++) {
             for (int j = 0; j < W; j++) {
                 if (board[i][j] != ' ') {
-                    RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
-                    rect.setPosition(Vector2f(j * TILE_SIZE, i * TILE_SIZE));
+                    RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
+                    rect.setPosition(Vector2f((float)j * TILE_SIZE, (float)i * TILE_SIZE));
                     rect.setFillColor(getColor(board[i][j]));
                     window.draw(rect);
                 }
@@ -358,16 +436,20 @@ int main() {
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 if (currentPiece->shape[i][j] != ' ') {
-                    RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
-                    rect.setPosition(Vector2f((x + j) * TILE_SIZE, (y + i) * TILE_SIZE));
+                    RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
+                    rect.setPosition(Vector2f((float)(x + j) * TILE_SIZE, (float)(y + i) * TILE_SIZE));
                     rect.setFillColor(getColor(currentPiece->shape[i][j]));
                     window.draw(rect);
                 }
             }
         }
 
+        // Draw Sidebar 
+        drawSidebar(window, ui);
+
         window.display();
     }
 
+    delete currentPiece; // cleanup
     return 0;
 }
