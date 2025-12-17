@@ -138,8 +138,25 @@ public:
         shape[2][0] = 'L'; shape[2][1] = 'L'; shape[2][2] = 'L';
     }
 };
-
+Color getColor(char c) {
+    switch (c) {
+        case 'I': return Color::Cyan;
+        case 'J': return Color::Blue;
+        case 'L': return Color(255, 165, 0); // Orange
+        case 'O': return Color::Yellow;
+        case 'S': return Color::Green;
+        case 'T': return Color(128, 0, 128); // Purple
+        case 'Z': return Color::Red;
+        case '#': return Color(100, 100, 100); // Grey
+        default:  return Color::Black;
+    }
+}
 // --- SIDE BAR UI ---
+// sidebar UI properties 
+int gScore = 0;
+int gLines = 0;
+int gLevel = 1;
+//
 // Draw UI
 struct SidebarUI {
     float x, y, w, h;
@@ -254,7 +271,7 @@ static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui,
     drawText(window, font, "LINES", labelX, ui.linesBox.position.y + 10.f, 18);
     drawText(window, font, std::to_string(lines), labelX, ui.linesBox.position.y + 42.f, 24);
 
-    drawText(window, font, "NEXT", labelX, ui.nextBox.position.y + 10.f, 18);
+    drawText(window, font, "NEXT", labelX, ui.nextBox.position.y + 10.f, 16);
 
     // 4) preview
     drawNextPreview(window, ui, next);
@@ -271,11 +288,7 @@ void applyLineClearScore(int cleared) {
 // --- GAME LOGIC ---
 
 
-// sidebar UI properties 
-int gScore = 0;
-int gLines = 0;
-int gLevel = 1;
-//
+
 
 Piece* currentPiece = nullptr;
 
@@ -361,19 +374,7 @@ int removeLine() {
     return cleared;
 }
 
-Color getColor(char c) {
-    switch (c) {
-        case 'I': return Color::Cyan;
-        case 'J': return Color::Blue;
-        case 'L': return Color(255, 165, 0); // Orange
-        case 'O': return Color::Yellow;
-        case 'S': return Color::Green;
-        case 'T': return Color(128, 0, 128); // Purple
-        case 'Z': return Color::Red;
-        case '#': return Color(100, 100, 100); // Grey
-        default:  return Color::Black;
-    }
-}
+
 
 // --- MAIN FUNCTION ---
 
@@ -381,7 +382,11 @@ int main() {
     RenderWindow window(VideoMode(Vector2u(PLAY_W_PX + SIDEBAR_W, PLAY_H_PX)), "SS008 - Tetris");
     window.setFramerateLimit(60);
     SidebarUI ui = makeSidebarUI();
-
+    // add font
+    sf::Font font;
+    if (!font.openFromFile("assets/fonts/DejaVuSans.ttf")) {
+        return -1;
+    }
     // Load Audio
     if (!bgMusic.openFromFile("loop_theme.wav")) return -1;
     if (!clearBuffer.loadFromFile("line_clear.wav")) return -1;
@@ -394,6 +399,7 @@ int main() {
     // Init Game
     srand((unsigned)time(0));
     currentPiece = createRandomPiece();
+    Piece* nextPiece = createRandomPiece(); // next piece to preview on side bar
     initBoard();
 
     Clock clock;
@@ -450,7 +456,8 @@ int main() {
                 int cleared = removeLine(); // check if a line is removed 
                 applyLineClearScore(cleared);  // apply changes for a cleared line
                 delete currentPiece;
-                currentPiece = createRandomPiece();
+                currentPiece = nextPiece;   // assign nextpiece for currentpiece
+                nextPiece = createRandomPiece();    // random next piece
                 x = 4;
                 y = 0;
 
@@ -489,11 +496,11 @@ int main() {
         }
 
         // Draw Sidebar 
-        drawSidebar(window, ui);
-
+        drawSidebar(window, ui, font, gScore, gLevel, gLines, nextPiece);
         window.display();
     }
-
-    delete currentPiece; // cleanup
+    // cleanup
+    delete currentPiece;
+    delete nextPiece;
     return 0;
 }
