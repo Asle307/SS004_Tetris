@@ -9,10 +9,12 @@ using namespace std;
 using namespace sf;
 
 // --- GAME CONFIGURATION ---
+const int TILE_SIZE = 30;
 const int H = 20;
 const int W = 15;
-const int TILE_SIZE = 30;
-
+const int SIDEBAR_W = 6 * TILE_SIZE;        
+const int PLAY_W_PX = W * TILE_SIZE;
+const int PLAY_H_PX = H * TILE_SIZE;
 // --- GLOBAL VARIABLES ---
 char board[H][W] = {};
 int x = 4, y = 0;
@@ -137,7 +139,14 @@ public:
     }
 };
 
+// --- SIDE BAR UI ---
+
 // --- GAME LOGIC ---
+
+
+
+
+
 
 Piece* currentPiece = nullptr;
 
@@ -244,7 +253,7 @@ Color getColor(char c) {
 // --- MAIN FUNCTION ---
 
 int main() {
-    RenderWindow window(VideoMode(Vector2u(W * TILE_SIZE, H * TILE_SIZE)), "SS008 - Tetris");
+    RenderWindow window(VideoMode(Vector2u(PLAY_W_PX + SIDEBAR_W, PLAY_H_PX)), "SS008 - Tetris");
     window.setFramerateLimit(60);
 
     // Load Audio
