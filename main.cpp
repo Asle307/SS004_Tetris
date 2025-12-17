@@ -219,6 +219,14 @@ static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui) {
 
     drawNextPreviewStub(window, ui); 
 }
+// update score, level, lines
+void applyLineClearScore(int cleared) {
+    if (cleared <= 0) return;
+
+    gLines += cleared;
+    gScore += 100 * cleared;
+    gLevel = 1 + (gLines / 10);
+}
 
 // --- GAME LOGIC ---
 
