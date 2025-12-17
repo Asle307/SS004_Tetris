@@ -190,42 +190,82 @@ static void drawText(sf::RenderWindow& window, const sf::Font& font, const std::
     window.draw(t);
 }
 
-static void drawNextPreviewStub(sf::RenderWindow& window, const SidebarUI& ui) {
-    const float innerPad = 16.f;
+static void drawNextPreview(sf::RenderWindow& window, const SidebarUI& ui, const Piece* p) {
+    if (!p) return;
 
-    sf::FloatRect area(
-        { ui.nextBox.position.x + innerPad, ui.nextBox.position.y + 60.f },
-        { ui.nextBox.size.x - 2.f * innerPad, ui.nextBox.size.y - 80.f }
-    );
+    int minR = 4, minC = 4, maxR = -1, maxC = -1;
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) {
+            if (p->shape[r][c] != ' ') {
+                minR = std::min(minR, r); minC = std::min(minC, c);
+                maxR = std::max(maxR, r); maxC = std::max(maxC, c);
+            }
+        }
+    }
+    if (maxR == -1) return; 
 
-    sf::RectangleShape r(area.size);
-    r.setPosition(area.position);
-    r.setFillColor(sf::Color::Transparent);
-    r.setOutlineThickness(1.f);
-    r.setOutlineColor(sf::Color(80, 80, 80));
-    window.draw(r);
+    int cellsW = maxC - minC + 1;
+    int cellsH = maxR - minR + 1;
+
+    int mini = TILE_SIZE / 2; 
+
+    sf::Vector2f areaPos = { ui.nextBox.position.x + 16.f, ui.nextBox.position.y + 60.f };
+    sf::Vector2f areaSize = { ui.nextBox.size.x - 32.f, ui.nextBox.size.y - 80.f };
+
+    float startX = areaPos.x + (areaSize.x - cellsW * mini) * 0.5f;
+    float startY = areaPos.y + (areaSize.y - cellsH * mini) * 0.5f;
+
+    for (int r = minR; r <= maxR; r++) {
+        for (int c = minC; c <= maxC; c++) {
+            if (p->shape[r][c] != ' ') {
+                sf::RectangleShape rect({(float)mini - 1, (float)mini - 1});
+                rect.setPosition({ startX + (c - minC) * mini, startY + (r - minR) * mini });
+                rect.setFillColor(getColor(p->shape[r][c]));
+                window.draw(rect);
+            }
+        }
+    }
 }
 
-static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui) {
+static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui,
+                        const sf::Font& font, int score, int level, int lines,
+                        const Piece* next) {
+    // 1) background
     sf::RectangleShape bg({ui.w, ui.h});
     bg.setPosition({ui.x, ui.y});
     bg.setFillColor(sf::Color(30, 30, 30));
     window.draw(bg);
 
+    // 2) panels
     drawPanel(window, ui.scoreBox);
     drawPanel(window, ui.levelBox);
     drawPanel(window, ui.linesBox);
     drawPanel(window, ui.nextBox);
 
-    drawNextPreviewStub(window, ui); 
+    // 3) labels + values (use x,y floats to match your drawText signature)
+    float labelX = ui.scoreBox.position.x + 12.f;
+
+    drawText(window, font, "SCORE", labelX, ui.scoreBox.position.y + 10.f, 18);
+    drawText(window, font, std::to_string(score), labelX, ui.scoreBox.position.y + 42.f, 24);
+
+    drawText(window, font, "LEVEL", labelX, ui.levelBox.position.y + 10.f, 18);
+    drawText(window, font, std::to_string(level), labelX, ui.levelBox.position.y + 42.f, 24);
+
+    drawText(window, font, "LINES", labelX, ui.linesBox.position.y + 10.f, 18);
+    drawText(window, font, std::to_string(lines), labelX, ui.linesBox.position.y + 42.f, 24);
+
+    drawText(window, font, "NEXT", labelX, ui.nextBox.position.y + 10.f, 18);
+
+    // 4) preview
+    drawNextPreview(window, ui, next);
 }
 // update score, level, lines
 void applyLineClearScore(int cleared) {
     if (cleared <= 0) return;
 
-    gLines += cleared;
-    gScore += 100 * cleared;
-    gLevel = 1 + (gLines / 10);
+    gLines += cleared;                  
+    gScore += 100 * cleared;            // a cleared line give 100 points
+    gLevel = 0 + (gLines / 10);         // a level costs 10 lines
 }
 
 // --- GAME LOGIC ---
@@ -296,33 +336,29 @@ void SpeedIncrement() {
     }
 }
 
-void removeLine() {
+int removeLine() {
+    int cleared = 0;
     for (int i = H - 2; i > 0; i--) {
         bool isFull = true;
         for (int j = 1; j < W - 1; j++) {
-            if (board[i][j] == ' ') {
-                isFull = false;
-                break;
-            }
+            if (board[i][j] == ' ') { isFull = false; break; }
         }
 
         if (isFull) {
+            cleared++;
             clearSound.play();
-            
-            // Shift rows down
+
             for (int k = i; k > 0; k--) {
                 for (int j = 1; j < W - 1; j++) {
-                    if (k != 1) {
-                        board[k][j] = board[k - 1][j];
-                    } else {
-                        board[k][j] = ' ';
-                    }
+                    board[k][j] = (k != 1) ? board[k - 1][j] : ' ';
                 }
             }
-            i++; // Re-check the current row
+            i++; 
             SpeedIncrement();
         }
     }
+
+    return cleared;
 }
 
 Color getColor(char c) {
@@ -411,8 +447,8 @@ int main() {
                 landSound.play();
 
                 block2Board();
-                removeLine();
-
+                int cleared = removeLine(); // check if a line is removed 
+                applyLineClearScore(cleared);  // apply changes for a cleared line
                 delete currentPiece;
                 currentPiece = createRandomPiece();
                 x = 4;
