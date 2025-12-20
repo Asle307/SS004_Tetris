@@ -27,6 +27,15 @@ sf::Sound landSound(landBuffer);
 
 sf::Music bgMusic;
 
+// --- game state ---
+
+enum class GameState {
+    MENU,
+    PLAYING,
+    SETTINGS,
+};
+GameState gameState = GameState::MENU;
+
 // --- PIECE CLASSES ---
 
 class Piece {
@@ -227,6 +236,17 @@ void removeLine() {
     }
 }
 
+void resetGame() {
+    initBoard();
+
+    delete currentPiece;
+    currentPiece = createRandomPiece();
+
+    x = 4;
+    y = 0;
+    gameDelay = 0.5f;
+}
+
 Color getColor(char c) {
     switch (c) {
         case 'I': return Color::Cyan;
@@ -266,6 +286,44 @@ int main() {
     float inputTimer = 0;
     const float inputDelay = 0.1f;
 
+    // UI menu
+    Font font;
+    if (!font.openFromFile("arial.ttf")) return -1;
+
+    // ===== TITLE =====
+    Text title(font);
+    title.setString("SS008 - TETRIS");
+    title.setCharacterSize(48);
+    title.setFillColor(Color::Cyan);
+    title.setPosition(sf::Vector2f{70.f, 60.f});
+
+    // ===== BUTTON FACTORY =====
+    auto createButton = [&](const string& label, float x, float y) {
+        RectangleShape btn(Vector2f(200, 50));
+        btn.setPosition(sf::Vector2f{static_cast<float>(x),
+                             static_cast<float>(y)});
+        btn.setFillColor(Color(50, 50, 50));
+
+        sf::Text txt(font);
+        txt.setString(label);
+        txt.setCharacterSize(24);
+        txt.setFillColor(Color::White);
+        txt.setPosition(sf::Vector2f{x + 60.f, y + 10.f});
+
+
+        return pair<RectangleShape, Text>(btn, txt);
+    };
+
+    auto [startBtn, startText]     = createButton("START",    120, 160);
+    auto [settingBtn, settingText] = createButton("SETTINGS", 120, 230);
+    auto [exitBtn, exitText]       = createButton("EXIT",     120, 300);
+
+    // ===== CLICK CHECK =====
+    auto isClicked = [&](RectangleShape& btn, Vector2i mousePos) {
+        return btn.getGlobalBounds().contains((Vector2f)mousePos);
+    };
+
+
     while (window.isOpen()) {
         float time = clock.getElapsedTime().asSeconds();
         clock.restart();
@@ -274,85 +332,155 @@ int main() {
 
         // --- EVENTS ---
         while (const auto event = window.pollEvent()) {
+            // ===== MENU CLICK =====
+            if (gameState == GameState::MENU) {
+                if (const auto* mouse = event->getIf<Event::MouseButtonPressed>()) {
+                    if (mouse->button == Mouse::Button::Left) {
+                        Vector2i mousePos = Mouse::getPosition(window);
+
+                        // START
+                        if (isClicked(startBtn, mousePos)) {
+                            gameState = GameState::PLAYING;
+
+                            initBoard();
+                            delete currentPiece;
+                            currentPiece = createRandomPiece();
+                            x = 4;
+                            y = 0;
+                            gameDelay = 0.5f;
+                        }
+                        
+                        // EXIT
+                        if (isClicked(exitBtn, mousePos)) {
+                            window.close();
+                        }
+                    }
+                }
+            }
             if (event->is<Event::Closed>()) {
                 window.close();
             }
-
-            if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                // Rotate
-                if (keyPressed->code == Keyboard::Key::W) {
-                    currentPiece->rotate(x, y);
-                }
-                // Hard Drop
-                else if (keyPressed->code == Keyboard::Key::Space) {
-                    while (canMove(0, 1)) {
-                        y++;
+            
+            
+            // ===== ROTATE & HARD DROP (While playing) & Enter to return menu =====
+            if (gameState == GameState::PLAYING) {
+                if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
+                    if (keyPressed->code == Keyboard::Key::W) {
+                        currentPiece->rotate(x, y);
                     }
-                    timer = gameDelay + 10.0f; // Force lock immediately
+                    else if (keyPressed->code == Keyboard::Key::Space) {
+                        while (canMove(0, 1)) y++;
+                        timer = gameDelay + 10.0f;
+                    }
+                    else if (keyPressed->code == Keyboard::Key::Enter) {
+                        gameState = GameState::MENU;
+                    }
+
+                }
+            }
+            else if (gameState == GameState::MENU) {
+                if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
+                    if (Keyboard::isKeyPressed(Keyboard::Key::Enter)) {
+                        resetGame();
+                        gameState = GameState::PLAYING;
+                    }
+                    if (Keyboard::isKeyPressed(Keyboard::Key::Escape)) {
+                        window.close();
+                    }
                 }
             }
         }
 
-        // --- INPUT (Continuous) ---
-        if (inputTimer > inputDelay) {
-            if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
-                if (canMove(-1, 0)) x--;
-                inputTimer = 0;
-            } else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
-                if (canMove(1, 0)) x++;
-                inputTimer = 0;
-            } else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
-                if (canMove(0, 1)) y++;
-                inputTimer = 0;
-            }
-        }
-
-        // --- GRAVITY & LOGIC ---
-        if (timer > gameDelay) {
-            if (canMove(0, 1)) {
-                y++;
-            } else {
-                landSound.play();
-
-                block2Board();
-                removeLine();
-
-                delete currentPiece;
-                currentPiece = createRandomPiece();
-                x = 4; 
-                y = 0;
-
-                // Game Over Check
-                if (!canMove(0, 0)) {
-                    window.close();
+        if (gameState == GameState::PLAYING) {
+            // ===== INPUT =====
+            if (inputTimer > inputDelay) {
+                if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
+                    if (canMove(-1, 0)) x--;
+                    inputTimer = 0;
                 }
+                else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
+                    if (canMove(1, 0)) x++;
+                    inputTimer = 0;
+                }
+                else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
+                    if (canMove(0, 1)) y++;
+                    inputTimer = 0;
+                }
+                
             }
-            timer = 0;
+
+            // ===== GRAVITY =====
+            if (timer > gameDelay) {
+                if (canMove(0, 1)) {
+                    y++;
+                } else {
+                    landSound.play();
+                    block2Board();
+                    removeLine();
+
+                    delete currentPiece;
+                    currentPiece = createRandomPiece();
+                    x = 4;
+                    y = 0;
+
+                    if (!canMove(0, 0)) {
+                        gameState = GameState::MENU;
+                    }
+                }
+                timer = 0;
+            }
         }
+        
 
         // --- RENDER ---
         window.clear(Color::Black);
+        // ===== MENU =====
+        if (gameState == GameState::MENU) {
+            window.draw(title);
 
-        // Draw Board
-        for (int i = 0; i < H; i++) {
-            for (int j = 0; j < W; j++) {
-                if (board[i][j] != ' ') {
-                    RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
-                    rect.setPosition(Vector2f(j * TILE_SIZE, i * TILE_SIZE));
-                    rect.setFillColor(getColor(board[i][j]));
-                    window.draw(rect);
+            window.draw(startBtn);
+            window.draw(startText);
+
+            window.draw(settingBtn);
+            window.draw(settingText);
+
+            window.draw(exitBtn);
+            window.draw(exitText);
+        }
+        // ===== GAME =====
+        if (gameState == GameState::PLAYING) {
+
+            // Draw Board
+            for (int i = 0; i < H; i++) {
+                for (int j = 0; j < W; j++) {
+                    if (board[i][j] != ' ') {
+                        RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
+                        rect.setPosition(
+                            sf::Vector2f{
+                                static_cast<float>(j * TILE_SIZE),
+                                static_cast<float>(i * TILE_SIZE)
+                            }
+                        );
+                        rect.setFillColor(getColor(board[i][j]));
+                        window.draw(rect);
+                    }
                 }
             }
-        }
 
-        // Draw Current Piece
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (currentPiece->shape[i][j] != ' ') {
-                    RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
-                    rect.setPosition(Vector2f((x + j) * TILE_SIZE, (y + i) * TILE_SIZE));
-                    rect.setFillColor(getColor(currentPiece->shape[i][j]));
-                    window.draw(rect);
+            // Draw Current Piece
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    if (currentPiece->shape[i][j] != ' ') {
+                        RectangleShape rect(Vector2f(TILE_SIZE - 1, TILE_SIZE - 1));
+                        rect.setPosition(
+                            sf::Vector2f{
+                                static_cast<float>((x + j) * TILE_SIZE),
+                                static_cast<float>((y + i) * TILE_SIZE)
+                            }
+                        );
+                        rect.setFillColor(getColor(currentPiece->shape[i][j]));
+                        window.draw(rect);
+                    }
                 }
             }
         }
