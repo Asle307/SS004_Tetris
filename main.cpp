@@ -18,7 +18,8 @@ const int PLAY_H_PX = H * TILE_SIZE;
 // --- GLOBAL VARIABLES ---
 char board[H][W] = {};
 int x = 4, y = 0;
-float gameDelay = 0.8f;
+float gameDelay = 0.5f;
+bool isGameOver = false; // Trạng thái game
 
 // --- AUDIO RESOURCES ---
 sf::SoundBuffer clearBuffer;
@@ -30,11 +31,9 @@ sf::Sound landSound(landBuffer);
 sf::Music bgMusic;
 
 // --- PIECE CLASSES ---
-
 class Piece {
 public:
     char shape[4][4];
-
     Piece() {
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
@@ -42,34 +41,24 @@ public:
             }
         }
     }
-
     virtual ~Piece() {}
-
     virtual void rotate(int currentX, int currentY) {
         char temp[4][4];
-
-        // 1. Rotate to temp matrix
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 temp[j][3 - i] = shape[i][j];
             }
         }
-
-        // 2. Check collision
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 if (temp[i][j] != ' ') {
                     int tx = currentX + j;
                     int ty = currentY + i;
-                    
-                    // Check boundaries and existing blocks
                     if (tx < 1 || tx >= W - 1 || ty >= H - 1) return;
                     if (board[ty][tx] != ' ') return;
                 }
             }
         }
-
-        // 3. Apply rotation
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 shape[i][j] = temp[i][j];
@@ -302,10 +291,6 @@ void applyLineClearScore(int cleared) {
 }
 
 // --- GAME LOGIC ---
-
-
-
-
 Piece* currentPiece = nullptr;
 
 Piece* createRandomPiece() {
@@ -322,7 +307,7 @@ Piece* createRandomPiece() {
     }
 }
 
-void block2Board() {
+void block2Board() { 
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
             if (currentPiece->shape[i][j] != ' ') {
@@ -335,22 +320,19 @@ void block2Board() {
 void initBoard() {
     for (int i = 0; i < H; i++) {
         for (int j = 0; j < W; j++) {
-            if ((i == H - 1) || (j == 0) || (j == W - 1)) {
-                board[i][j] = '#';
-            } else {
-                board[i][j] = ' ';
-            }
+            if ((i == H - 1) || (j == 0) || (j == W - 1)) board[i][j] = '#';
+            else board[i][j] = ' ';
         }
     }
 }
 
 bool canMove(int dx, int dy) {
+    if (!currentPiece) return false;
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
             if (currentPiece->shape[i][j] != ' ') {
                 int tx = x + j + dx;
                 int ty = y + i + dy;
-                
                 if (tx < 1 || tx >= W - 1 || ty >= H - 1) return false;
                 if (board[ty][tx] != ' ') return false;
             }
@@ -359,7 +341,14 @@ bool canMove(int dx, int dy) {
     return true;
 }
 
-
+void restartGame() {
+    initBoard();
+    if (currentPiece) delete currentPiece;
+    currentPiece = createRandomPiece();
+    x = 4; y = 0;
+    gameDelay = 0.5f;
+    isGameOver = false;
+}
 
 int removeLine() {
     int cleared = 0;
@@ -368,27 +357,23 @@ int removeLine() {
         for (int j = 1; j < W - 1; j++) {
             if (board[i][j] == ' ') { isFull = false; break; }
         }
-
         if (isFull) {
             cleared++;
             clearSound.play();
-
             for (int k = i; k > 0; k--) {
                 for (int j = 1; j < W - 1; j++) {
-                    board[k][j] = (k != 1) ? board[k - 1][j] : ' ';
+                    if (k != 1) board[k][j] = board[k - 1][j];
+                    else board[k][j] = ' ';
                 }
             }
             i++; 
+            SpeedIncrement();
         }
     }
-
     return cleared;
 }
 
-
-
 // --- MAIN FUNCTION ---
-
 int main() {
     RenderWindow window(VideoMode(Vector2u(PLAY_W_PX + SIDEBAR_W, PLAY_H_PX)), "SS008 - Tetris");
     window.setFramerateLimit(60);
@@ -414,68 +399,70 @@ int main() {
     initBoard();
 
     Clock clock;
-    float timer = 0.f;
-    float inputTimer = 0.f;
+    float timer = 0, inputTimer = 0;
     const float inputDelay = 0.1f;
 
     while (window.isOpen()) {
-        float dt = clock.restart().asSeconds();
-        timer += dt;
-        inputTimer += dt;
+        float time = clock.getElapsedTime().asSeconds();
+        clock.restart();
+        if (!isGameOver) {
+            timer += time;
+            inputTimer += time;
+        }
 
         // --- EVENTS ---
         while (const auto event = window.pollEvent()) {
-            if (event->is<Event::Closed>()) {
-                window.close();
+            if (event->is<Event::Closed>()) window.close();
+
+            // Logic Click chuột khi Game Over
+            if (isGameOver && event->is<Event::MouseButtonPressed>()) {
+                Vector2i m = Mouse::getPosition(window);
+                if (m.x > 125 && m.x < 325 && m.y > 250 && m.y < 300) restartGame();
+                if (m.x > 125 && m.x < 325 && m.y > 330 && m.y < 380) window.close();
             }
 
-            if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                if (keyPressed->code == Keyboard::Key::W) {
-                    currentPiece->rotate(x, y);
-                }
-                else if (keyPressed->code == Keyboard::Key::Space) {
-                    while (canMove(0, 1)) y++;
-                    timer = gameDelay + 10.0f; // force lock
+            if (!isGameOver) {
+                if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
+                    if (keyPressed->code == Keyboard::Key::W) currentPiece->rotate(x, y);
+                    else if (keyPressed->code == Keyboard::Key::Space) {
+                        while (canMove(0, 1)) y++;
+                        timer = gameDelay + 10.0f; // force lock
+                    }
                 }
             }
         }
 
         // --- INPUT (Continuous) ---
-        if (inputTimer > inputDelay) {
-            if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
-                if (canMove(-1, 0)) x--;
-                inputTimer = 0.f;
-            }
-            else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
-                if (canMove(1, 0)) x++;
-                inputTimer = 0.f;
-            }
-            else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
-                if (canMove(0, 1)) y++;
-                inputTimer = 0.f;
-            }
-        }
-
-        // --- GRAVITY & LOGIC ---
-        if (timer > gameDelay) {
-            if (canMove(0, 1)) {
-                y++;
-            } else {
-                landSound.play();
-                block2Board();
-                int cleared = removeLine(); // check if a line is removed 
-                applyLineClearScore(cleared);  // apply changes for a cleared line
-                delete currentPiece;
-                currentPiece = nextPiece;   // assign nextpiece for currentpiece
-                nextPiece = createRandomPiece();    // random next piece
-                x = 4;
-                y = 0;
-
-                if (!canMove(0, 0)) {
-                    window.close();
+        if (!isGameOver) {
+            if (inputTimer > inputDelay) {
+                if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
+                    if (canMove(-1, 0)) x--;
+                    inputTimer = 0;
+                } else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
+                    if (canMove(1, 0)) x++;
+                    inputTimer = 0;
+                } else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
+                    if (canMove(0, 1)) y++;
+                    inputTimer = 0;
                 }
             }
-            timer = 0.f;
+
+            // --- GRAVITY & LOGIC ---
+            if (timer > gameDelay) {
+                if (canMove(0, 1)) y++;
+                else {
+                    landSound.play();
+                    block2Board(); // Gọi hàm của bạn
+                    int cleared = removeLine(); // check if a line is removed 
+                    applyLineClearScore(cleared);  // apply changes for a cleared line
+                    delete currentPiece;
+                    currentPiece = nextPiece;   // assign nextpiece for currentpiece
+                    nextPiece = createRandomPiece();    // random next piece
+                    x = 4; y = 0;
+                    if (!canMove(0, 0)) isGameOver = true;
+                }
+                timer = 0;
+            }
         }
 
         // --- RENDER (ONLY ONCE) ---
@@ -492,17 +479,49 @@ int main() {
                 }
             }
         }
-
+        
         // Draw Current Piece
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (currentPiece->shape[i][j] != ' ') {
-                    RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
-                    rect.setPosition(Vector2f((float)(x + j) * TILE_SIZE, (float)(y + i) * TILE_SIZE));
-                    rect.setFillColor(getColor(currentPiece->shape[i][j]));
-                    window.draw(rect);
-                }
-            }
+        if (!isGameOver) 
+        {
+            for (int i = 0; i < 4; i++) 
+                for (int j = 0; j < 4; j++)
+                    if (currentPiece->shape[i][j] != ' ') 
+                    {
+                        RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
+                        rect.setPosition(Vector2f((float)(x + j) * TILE_SIZE, (float)(y + i) * TILE_SIZE));
+                        rect.setFillColor(getColor(currentPiece->shape[i][j]));
+                        window.draw(rect);
+                    }
+        }
+
+        // Màn hình Game Over
+        if (isGameOver) {
+            RectangleShape overlay(Vector2f(W * TILE_SIZE, H * TILE_SIZE));
+            overlay.setFillColor(Color(0, 0, 0, 200));
+            window.draw(overlay);
+
+            Text t1(font, "GAME OVER", 45);
+            t1.setFillColor(Color::Red);
+            t1.setPosition(Vector2f(85, 150));
+            window.draw(t1);
+
+            // Nút Restart
+            RectangleShape b1(Vector2f(200, 50));
+            b1.setPosition(Vector2f(125, 250));
+            b1.setFillColor(Color(0, 0, 255));
+            window.draw(b1);
+            Text rT(font, "RESTART", 25);
+            rT.setPosition(Vector2f(175, 260));
+            window.draw(rT);
+
+            // Nút Exit
+            RectangleShape b2(Vector2f(200, 50));
+            b2.setPosition(Vector2f(125, 330));
+            b2.setFillColor(Color(255, 0, 0));
+            window.draw(b2);
+            Text eT(font, "EXIT", 25);
+            eT.setPosition(Vector2f(200, 340));
+            window.draw(eT);
         }
 
         // Draw Sidebar 
