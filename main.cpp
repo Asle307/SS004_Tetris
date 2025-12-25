@@ -1,933 +1,589 @@
-#include <SFML/Graphics.hpp>
-#include <SFML/Audio.hpp>
-#include <vector>
-#include <ctime>
-#include <algorithm>
-#include <optional>
+/*
+ * Tetris Game - Modern implementation with advanced mechanics
+ * Copyright (C) 2025 Tetris Game Contributors
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 
-using namespace std;
+#include <SFML/Graphics.hpp>
+#include <ctime>
+#include "src/Config.h"
+#include "src/Piece.h"
+#include "src/Game.h"
+#include "src/Audio.h"
+#include "src/UI.h"
+
 using namespace sf;
 
-// --- GAME CONFIGURATION ---
-const int TILE_SIZE = 30;
-const int H = 20;
-const int W = 15;
-const int SIDEBAR_W = 6 * TILE_SIZE;        
-const int PLAY_W_PX = W * TILE_SIZE;
-const int PLAY_H_PX = H * TILE_SIZE;
-
-// --- GLOBAL VARIABLES ---
-char board[H][W] = {};
-int x = 4, y = 0;
-float gameDelay = 0.5f;
-bool isGameOver = false; // Trạng thái game
-
-// --- SETTINGS ---
-float musicVolume = 50.f;
-float sfxVolume = 50.f;
-float brightness = 255.f;
-
-// --- AUDIO RESOURCES ---
-sf::SoundBuffer clearBuffer;
-sf::Sound clearSound(clearBuffer);
-
-sf::SoundBuffer landBuffer;
-sf::Sound landSound(landBuffer);
-
-sf::SoundBuffer settingClickBuffer;
-sf::Sound settingClickSound(settingClickBuffer);
-
-sf::Music bgMusic;
-
-// --- game state ---
-enum class GameState {
-    MENU,
-    PLAYING,
-    SETTINGS,
-};
-GameState gameState = GameState::MENU;
-
-// --- PIECE CLASSES ---
-
-class Piece {
-public:
-    char shape[4][4];
-
-    Piece() {
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                shape[i][j] = ' ';
-            }
-        }
-    }
-
-    virtual ~Piece() {}
-
-    virtual void rotate(int currentX, int currentY) {
-        char temp[4][4];
-
-        // 1. Rotate to temp matrix
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                temp[j][3 - i] = shape[i][j];
-            }
-        }
-
-        // 2. Check collision
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (temp[i][j] != ' ') {
-                    int tx = currentX + j;
-                    int ty = currentY + i;
-                    
-                    // Check boundaries and existing blocks
-                    if (tx < 1 || tx >= W - 1 || ty >= H - 1) return;
-                    if (board[ty][tx] != ' ') return;
-                }
-            }
-        }
-
-        // 3. Apply rotation
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                shape[i][j] = temp[i][j];
-            }
-        }
-    }
-};
-
-class IPiece : public Piece {
-public:
-    IPiece() {
-        shape[0][1] = 'I';
-        shape[1][1] = 'I';
-        shape[2][1] = 'I';
-        shape[3][1] = 'I';
-    }
-};
-
-class OPiece : public Piece {
-public:
-    OPiece() {
-        shape[1][1] = 'O'; shape[1][2] = 'O';
-        shape[2][1] = 'O'; shape[2][2] = 'O';
-    }
-    void rotate(int, int) override {
-        // O Piece does not rotate
-    }
-};
-
-class TPiece : public Piece {
-public:
-    TPiece() {
-        shape[1][1] = 'T';
-        shape[2][0] = 'T'; shape[2][1] = 'T'; shape[2][2] = 'T';
-    }
-};
-
-class SPiece : public Piece {
-public:
-    SPiece() {
-        shape[1][1] = 'S'; shape[1][2] = 'S';
-        shape[2][0] = 'S'; shape[2][1] = 'S';
-    }
-};
-
-class ZPiece : public Piece {
-public:
-    ZPiece() {
-        shape[1][0] = 'Z'; shape[1][1] = 'Z';
-        shape[2][1] = 'Z'; shape[2][2] = 'Z';
-    }
-};
-
-class JPiece : public Piece {
-public:
-    JPiece() {
-        shape[1][0] = 'J';
-        shape[2][0] = 'J'; shape[2][1] = 'J'; shape[2][2] = 'J';
-    }
-};
-
-class LPiece : public Piece {
-public:
-    LPiece() {
-        shape[1][2] = 'L';
-        shape[2][0] = 'L'; shape[2][1] = 'L'; shape[2][2] = 'L';
-    }
-};
-
-Color getColor(char c) {
-    switch (c) {
-        case 'I': return Color::Cyan;
-        case 'J': return Color::Blue;
-        case 'L': return Color(255, 165, 0); // Orange
-        case 'O': return Color::Yellow;
-        case 'S': return Color::Green;
-        case 'T': return Color(128, 0, 128); // Purple
-        case 'Z': return Color::Red;
-        case '#': return Color(100, 100, 100); // Grey
-        default:  return Color::Black;
-    }
-}
-// --- SIDE BAR UI ---
-// sidebar UI properties 
-int gScore = 0;
-int gLines = 0;
-int gLevel = 0;
-int currentLevel = 0;
-//
-// Draw UI
-struct SidebarUI {
-    float x, y, w, h;
-    float pad;
-    float boxW;
-
-    sf::FloatRect scoreBox;
-    sf::FloatRect levelBox;
-    sf::FloatRect linesBox;
-    sf::FloatRect nextBox;
-};
-
-static SidebarUI makeSidebarUI() {
-    SidebarUI ui{};
-    ui.x = (float)PLAY_W_PX;
-    ui.y = 0.f;
-    ui.w = (float)SIDEBAR_W;
-    ui.h = (float)PLAY_H_PX;
-
-    ui.pad  = 10.f;
-    ui.boxW = ui.w - 2.f * ui.pad;
-
-    const float boxH = 90.f;
-    const float gap  = 30.f;
-    const float left = ui.x + ui.pad;
-
-    ui.scoreBox = sf::FloatRect({left, 20.f},               {ui.boxW, boxH});
-    ui.levelBox = sf::FloatRect({left, 20.f + boxH + gap},  {ui.boxW, boxH});
-    ui.linesBox = sf::FloatRect({left, 20.f + 2*(boxH+gap)},{ui.boxW, boxH});
-    ui.nextBox  = sf::FloatRect({left, 20.f + 3*(boxH+gap)},{ui.boxW, 220.f});
-
-    return ui;
-}
-
-static void drawPanel(sf::RenderWindow& window, const sf::FloatRect& r) {
-    const float outline = 3.f;
-    const float inset = outline; 
-
-    sf::RectangleShape box({ r.size.x - 2.f*inset, r.size.y - 2.f*inset });
-    box.setPosition({ r.position.x + inset, r.position.y + inset });
-
-    box.setFillColor(sf::Color::Black);
-    box.setOutlineThickness(outline);
-    box.setOutlineColor(sf::Color(200, 200, 200));
-    window.draw(box);
-}
-
-static void drawText(sf::RenderWindow& window, const sf::Font& font, const std::string& s, float x, float y, unsigned size) {
-    sf::Text t(font, s, size);
-    t.setFillColor(sf::Color::White);
-    t.setPosition({x, y});
-    window.draw(t);
-}
-
-static void drawNextPreview(sf::RenderWindow& window, const SidebarUI& ui, const Piece* p) {
-    if (!p) return;
-
-    int minR = 4, minC = 4, maxR = -1, maxC = -1;
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < 4; c++) {
-            if (p->shape[r][c] != ' ') {
-                minR = std::min(minR, r); minC = std::min(minC, c);
-                maxR = std::max(maxR, r); maxC = std::max(maxC, c);
-            }
-        }
-    }
-    if (maxR == -1) return; 
-
-    int cellsW = maxC - minC + 1;
-    int cellsH = maxR - minR + 1;
-
-    int mini = TILE_SIZE / 2; 
-
-    sf::Vector2f areaPos = { ui.nextBox.position.x + 16.f, ui.nextBox.position.y + 60.f };
-    sf::Vector2f areaSize = { ui.nextBox.size.x - 32.f, ui.nextBox.size.y - 80.f };
-
-    float startX = areaPos.x + (areaSize.x - cellsW * mini) * 0.5f;
-    float startY = areaPos.y + (areaSize.y - cellsH * mini) * 0.5f;
-
-    for (int r = minR; r <= maxR; r++) {
-        for (int c = minC; c <= maxC; c++) {
-            if (p->shape[r][c] != ' ') {
-                sf::RectangleShape rect({(float)mini - 1, (float)mini - 1});
-                rect.setPosition({ startX + (c - minC) * mini, startY + (r - minR) * mini });
-                rect.setFillColor(getColor(p->shape[r][c]));
-                window.draw(rect);
-            }
-        }
-    }
-}
-
-static void drawSidebar(sf::RenderWindow& window, const SidebarUI& ui,
-                        const sf::Font& font, int score, int level, int lines,
-                        const Piece* next) {
-    // 1) background
-    sf::RectangleShape bg({ui.w, ui.h});
-    bg.setPosition({ui.x, ui.y});
-    bg.setFillColor(sf::Color(30, 30, 30));
-    window.draw(bg);
-
-    // 2) panels
-    drawPanel(window, ui.scoreBox);
-    drawPanel(window, ui.levelBox);
-    drawPanel(window, ui.linesBox);
-    drawPanel(window, ui.nextBox);
-
-    // 3) labels + values (use x,y floats to match your drawText signature)
-    float labelX = ui.scoreBox.position.x + 12.f;
-
-    drawText(window, font, "SCORE", labelX, ui.scoreBox.position.y + 10.f, 18);
-    drawText(window, font, std::to_string(score), labelX, ui.scoreBox.position.y + 42.f, 24);
-
-    drawText(window, font, "LEVEL", labelX, ui.levelBox.position.y + 10.f, 18);
-    drawText(window, font, std::to_string(level), labelX, ui.levelBox.position.y + 42.f, 24);
-
-    drawText(window, font, "LINES", labelX, ui.linesBox.position.y + 10.f, 18);
-    drawText(window, font, std::to_string(lines), labelX, ui.linesBox.position.y + 42.f, 24);
-
-    drawText(window, font, "NEXT", labelX, ui.nextBox.position.y + 10.f, 18);
-
-    // 4) preview
-    drawNextPreview(window, ui, next);
-}
-// update score, level, lines
-void SpeedIncrement() {
-    if (gameDelay > 0.1f) {
-        gameDelay -= 0.08f;
-    }
-}
-void applyLineClearScore(int cleared) {
-    if (cleared <= 0) return;
-    printf("Cleared Lines: %d\n", cleared);
-    printf("Score: %d\n", gScore);
-    printf("level: %d\n", gLevel);
-    gLines += cleared;                  
-    gScore += 100 * cleared;            // a cleared line give 100 points
-    gLevel = 0 + (gLines / 10);         // a level costs 10 lines
-    if (gLevel > currentLevel) {
-        SpeedIncrement();
-        currentLevel = gLevel;
-    }
-}
-
-// --- GAME LOGIC ---
-
-Piece* currentPiece = nullptr;
-
-Piece* createRandomPiece() {
-    int r = rand() % 7;
-    switch (r) {
-        case 0: return new IPiece();
-        case 1: return new OPiece();
-        case 2: return new TPiece();
-        case 3: return new SPiece();
-        case 4: return new ZPiece();
-        case 5: return new JPiece();
-        case 6: return new LPiece();
-        default: return new IPiece();
-    }
-}
-
-void block2Board() {
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            if (currentPiece->shape[i][j] != ' ') {
-                board[y + i][x + j] = currentPiece->shape[i][j];
-            }
-        }
-    }
-}
-
-void initBoard() {
-    for (int i = 0; i < H; i++) {
-        for (int j = 0; j < W; j++) {
-            if ((i == H - 1) || (j == 0) || (j == W - 1)) {
-                board[i][j] = '#';
-            } else {
-                board[i][j] = ' ';
-            }
-        }
-    }
-}
-
-bool canMove(int dx, int dy) {
-    if (!currentPiece) return false;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            if (currentPiece->shape[i][j] != ' ') {
-                int tx = x + j + dx;
-                int ty = y + i + dy;
-                
-                if (tx < 1 || tx >= W - 1 || ty >= H - 1) return false;
-                if (board[ty][tx] != ' ') return false;
-            }
-        }
-    }
-    return true;
-}
-
-void restartGame() {
-    initBoard();
-    if (currentPiece) delete currentPiece;
-    currentPiece = createRandomPiece();
-    x = 4; y = 0;
-    gameDelay = 0.5f;
-    isGameOver = false;
-}
-
-int removeLine() {
-    int cleared = 0;
-    for (int i = H - 2; i > 0; i--) {
-        bool isFull = true;
-        for (int j = 1; j < W - 1; j++) {
-            if (board[i][j] == ' ') {
-                isFull = false;
-                break;
-            }
-        }
-
-        if (isFull) {
-            cleared++;
-            clearSound.play();
-            
-            // Shift rows down
-            for (int k = i; k > 0; k--) {
-                for (int j = 1; j < W - 1; j++) {
-                    if (k != 1) {
-                        board[k][j] = board[k - 1][j];
-                    } else {
-                        board[k][j] = ' ';
-                    }
-                }
-            }
-            i++; // Re-check the current row
-            SpeedIncrement();
-        }
-    }
-    return cleared;
-}
-
-void resetGame() {
-    initBoard();
-
-    delete currentPiece;
-    currentPiece = createRandomPiece();
-
-    x = 4;
-    y = 0;
-    gameDelay = 0.5f;
-}
-
-// --- MAIN FUNCTION ---
-
+/** Process main */
 int main() {
-    RenderWindow window(VideoMode(Vector2u(W * TILE_SIZE, H * TILE_SIZE)), "SS008 - Tetris");
+    srand(static_cast<unsigned>(time(nullptr)));
+    
+    loadHighScore();
+    loadSettings();
+    
+    sf::ContextSettings settings;
+    settings.antiAliasingLevel = 8;
+    bool isFullscreen = false;
+    RenderWindow window(VideoMode({WINDOW_W, WINDOW_H}), "TETRIS", sf::Style::Default, sf::State::Windowed, settings);
     window.setFramerateLimit(60);
-    SidebarUI ui = makeSidebarUI();
-    // add font
-    sf::Font font;
-    if (!font.openFromFile("Monocraft.ttf")) {
-        return -1;
+    
+/** Process window */
+    sf::View gameView(sf::FloatRect({0, 0}, {(float)WINDOW_W, (float)WINDOW_H}));
+    window.setView(gameView);
+
+    sf::Image icon;
+    if (icon.loadFromFile("assets/logo.png")) {
+        window.setIcon(icon);
     }
 
-    // Load Audio
-    if (!bgMusic.openFromFile("loop_theme.wav")) return -1;
-    if (!clearBuffer.loadFromFile("line_clear.wav")) return -1;
-    if (!landBuffer.loadFromFile("bumper_end.wav")) return -1;
-    if (!settingClickBuffer.loadFromFile("insetting_click.wav")) return -1;
+    Font font;
+    if (!font.openFromFile("assets/fonts/Monocraft.ttf")) return -1;
 
-    bgMusic.setLooping(true);
-    bgMusic.setVolume(musicVolume);
-    bgMusic.play();
+    if (!Audio::init()) return -1;
 
-    // Init Game
-    srand(time(0));
-    currentPiece = createRandomPiece();
-    Piece* nextPiece = createRandomPiece(); // next piece to preview on side bar
     initBoard();
+    currentPiece = createRandomPiece();
+    nextPiece = createRandomPiece();
+    for (int i = 0; i < 4; i++) {
+        nextQueue[i] = createRandomPiece();
+    }
 
-    Clock clock;
-    float timer = 0;
-    float inputTimer = 0;
-    const float inputDelay = 0.1f;
+    GameState state = GameState::MENU;
+    GameState previousState = GameState::MENU;
+    Clock timer;
+    Clock frameClock;
+    SidebarUI sidebarUI = UI::makeSidebarUI();
+    bool shouldClose = false;
+    bool blockInput = false;
 
+    const float fieldOffsetX = STATS_W;
 
-    // ===== TITLE ===== (centered in full window)
-    Text title(font);
-    title.setString("SS008 - TETRIS");
-    title.setCharacterSize(36);
-    title.setFillColor(Color::Cyan);
-    float titleWidth = title.getLocalBounds().size.x;
-    title.setPosition(sf::Vector2f{(W * TILE_SIZE - titleWidth) / 2.f, 60.f});
+    const float fullW = WINDOW_W;
+    const float goBtnW = 280.f;
+    const float goBtnX = (fullW - goBtnW) / 2.f;
 
-    // ===== BUTTON FACTORY ===== (centered in full window)
-    const float btnWidth = 200.f;
-    const float btnX = (W * TILE_SIZE - btnWidth) / 2.f;
-    auto createButton = [&](const string& label, float by) {
-        RectangleShape btn(Vector2f(btnWidth, 50));
-        btn.setPosition(sf::Vector2f{btnX, by});
-        btn.setFillColor(Color(50, 50, 50));
-        sf::Text txt(font);
-        txt.setString(label);
-        txt.setCharacterSize(24);
-        txt.setFillColor(Color::White);
-        float txtWidth = txt.getLocalBounds().size.x;
-        txt.setPosition(sf::Vector2f{btnX + (btnWidth - txtWidth) / 2.f, by + 10.f});
-        return pair<RectangleShape, Text>(btn, txt);
-    };
+/** Play background music */
+    Audio::playMusic();
 
-    auto [startBtn, startText]     = createButton("START",    160);
-    auto [settingBtn, settingText] = createButton("SETTINGS", 230);
-    auto [exitBtn, exitText]       = createButton("EXIT",     300);
-
-    auto isClicked = [&](RectangleShape& btn, Vector2i mousePos) {
-        FloatRect bounds = btn.getGlobalBounds();
-        return bounds.contains(Vector2f(static_cast<float>(mousePos.x), static_cast<float>(mousePos.y)));
-    };
-
-    while (window.isOpen()) {
-        float time = clock.getElapsedTime().asSeconds();
-        clock.restart();
+    while (window.isOpen() && !shouldClose) {
+        float dt = frameClock.restart().asSeconds();
         
-        if (gameState == GameState::PLAYING) {
-            timer += time;
-            inputTimer += time;
-        }
+        while (auto eventOpt = window.pollEvent()) {
+            Event& event = *eventOpt;
 
-        // --- EVENTS ---
-        while (const auto event = window.pollEvent()) {
-            // ===== MENU CLICK =====
-            if (gameState == GameState::MENU) {
-                if (const auto* mouse = event->getIf<Event::MouseButtonPressed>()) {
-                    if (mouse->button == Mouse::Button::Left) {
-                        Vector2i mousePos = Mouse::getPosition(window);
-                        if (isClicked(startBtn, mousePos)) {
-                            gameState = GameState::PLAYING;
-
-                            initBoard();
-                            delete currentPiece;
-                            currentPiece = createRandomPiece();
-                            x = 4;
-                            y = 0;
-                            gameDelay = 0.5f;
-                        }
-                        if (isClicked(settingBtn, mousePos)) {
-                            gameState = GameState::SETTINGS;
-                            continue;
-                        }
-                        if (isClicked(exitBtn, mousePos)) {
-                            window.close();
-                        }
-                    }
-                }
-            }
-
-            if (event->is<Event::Closed>()) {
+            if (event.is<Event::Closed>()) {
                 window.close();
             }
-
-            // Logic Click chuột khi Game Over
-            if (isGameOver && event->is<Event::MouseButtonPressed>()) {
-                Vector2i m = Mouse::getPosition(window);
-                if (m.x > 125 && m.x < 325 && m.y > 250 && m.y < 300) restartGame();
-                if (m.x > 125 && m.x < 325 && m.y > 330 && m.y < 380) window.close();
+            
+            if (auto* resized = event.getIf<Event::Resized>()) {
+                float windowW = static_cast<float>(resized->size.x);
+                float windowH = static_cast<float>(resized->size.y);
+                
+                float scaleX = windowW / WINDOW_W;
+                float scaleY = windowH / WINDOW_H;
+                float scale = std::min(scaleX, scaleY);
+                
+                float viewWidth = WINDOW_W * scale;
+                float viewHeight = WINDOW_H * scale;
+                float viewX = (windowW - viewWidth) / 2.f;
+                float viewY = (windowH - viewHeight) / 2.f;
+                
+                gameView.setViewport(sf::FloatRect(
+                    {viewX / windowW, viewY / windowH},
+                    {viewWidth / windowW, viewHeight / windowH}
+                ));
+                window.setView(gameView);
             }
-
-            // ===== PLAYING KEYS =====
-            if (gameState == GameState::PLAYING) {
-                if (!isGameOver) {
-                    // ===== INPUT =====
-                    if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                        if (keyPressed->code == Keyboard::Key::W) {
-                            currentPiece->rotate(x, y);
-                        }
-                        else if (keyPressed->code == Keyboard::Key::Space) {
-                            while (canMove(0, 1)) y++;
-                            timer = gameDelay + 10.0f;
-                        }
-                        else if (keyPressed->code == Keyboard::Key::Escape) {
-                            gameState = GameState::MENU;
-                        }
-
+            
+            if (auto* key = event.getIf<Event::KeyPressed>()) {
+                if (key->code == Keyboard::Key::F11) {
+                    isFullscreen = !isFullscreen;
+                    window.close();
+                    
+                    if (isFullscreen) {
+                        auto desktop = VideoMode::getDesktopMode();
+                        window.create(desktop, "TETRIS", sf::Style::Default, sf::State::Fullscreen, settings);
+                        
+                        float scaleX = (float)desktop.size.x / WINDOW_W;
+                        float scaleY = (float)desktop.size.y / WINDOW_H;
+                        float scale = std::min(scaleX, scaleY);
+                        
+                        float viewWidth = WINDOW_W * scale;
+                        float viewHeight = WINDOW_H * scale;
+                        float viewX = (desktop.size.x - viewWidth) / 2.f;
+                        float viewY = (desktop.size.y - viewHeight) / 2.f;
+                        
+                        gameView.setViewport(sf::FloatRect(
+                            {viewX / desktop.size.x, viewY / desktop.size.y},
+                            {viewWidth / desktop.size.x, viewHeight / desktop.size.y}
+                        ));
+                    } else {
+                        window.create(VideoMode({WINDOW_W, WINDOW_H}), "TETRIS", sf::Style::Default, sf::State::Windowed, settings);
+                        gameView.setViewport(sf::FloatRect({0.f, 0.f}, {1.f, 1.f}));
                     }
+                    
+                    window.setFramerateLimit(60);
+                    window.setView(gameView);
+                    
+                    if (icon.getSize().x > 0) {
+                        window.setIcon(icon);
+                    }
+                    timer.restart();
                 }
             }
-            else if (gameState == GameState::MENU) {
-                if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                    if (keyPressed->code == Keyboard::Key::Enter) {
-                        gameState = GameState::PLAYING;
+
+            if (event.is<Event::MouseButtonPressed>()) {
+                Vector2i pixelPos = Mouse::getPosition(window);
+                Vector2f mousePos = window.mapPixelToCoords(pixelPos);
+
+                if (state == GameState::MENU) {
+                    UI::handleMenuClick(Vector2i(mousePos), state, previousState, shouldClose);
+                    if (state == GameState::PLAYING) {
+                        timer.restart();
                     }
-                    if (keyPressed->code == Keyboard::Key::Escape) {
+                }
+                else if (state == GameState::PAUSED) {
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 320 && mousePos.y <= 385) {
+                        state = GameState::PLAYING;
+                        timer.restart();
+                    }
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 405 && mousePos.y <= 470) {
+                        previousState = GameState::PAUSED;
+                        state = GameState::HOWTOPLAY;
+                    }
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 490 && mousePos.y <= 555) {
+                        Audio::playOpenSettings();
+                        previousState = GameState::PAUSED;
+                        state = GameState::SETTINGS;
+                    }
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 575 && mousePos.y <= 640) {
+                        saveHighScore();
+                        state = GameState::MENU;
+                    }
+                }
+                else if (state == GameState::PLAYING && isGameOver) {
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 340 && mousePos.y <= 405) {
+                        saveHighScore();
+                        resetGame();
+                        timer.restart();
+                    }
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 430 && mousePos.y <= 495) {
+                        saveHighScore();
+/** Process restart */
+                        Audio::playTheme();
+                        state = GameState::MENU;
+                    }
+                    if (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW &&
+                        mousePos.y >= 520 && mousePos.y <= 585) {
+                        saveHighScore();
                         window.close();
                     }
                 }
-            }
-
-            // ===== SETTINGS CLICK =====
-            if (gameState == GameState::SETTINGS) {
-                if (const auto* mouse = event->getIf<Event::MouseButtonPressed>()) {
-                    if (mouse->button == Mouse::Button::Left) {
-                        Vector2i mousePos = Mouse::getPosition(window);
-                        const float sliderX = 70.f;  // Căn giữa hơn
-                        const float sliderW = 200.f;
-                        const float arrowGap = 20.f; // Khoảng cách mũi tên đến slider
-
-                        // Music slider row Y=155
-                        // Left arrow
-                        if (mousePos.x >= sliderX && mousePos.x <= sliderX + 15 && mousePos.y >= 150 && mousePos.y <= 180) {
-                            musicVolume = max(0.f, musicVolume - 5.f);
-                            bgMusic.setVolume(musicVolume);
-                            settingClickSound.play();
-                        }
-                        // Right arrow
-                        if (mousePos.x >= sliderX + arrowGap + sliderW && mousePos.x <= sliderX + arrowGap + sliderW + 15 && mousePos.y >= 150 && mousePos.y <= 180) {
-                            musicVolume = min(100.f, musicVolume + 5.f);
-                            bgMusic.setVolume(musicVolume);
-                            settingClickSound.play();
-                        }
-                        // Slider bar
-                        if (mousePos.x >= sliderX + arrowGap && mousePos.x <= sliderX + arrowGap + sliderW && mousePos.y >= 152 && mousePos.y <= 178) {
-                            musicVolume = static_cast<float>(mousePos.x - (sliderX + arrowGap)) / sliderW * 100.f;
-                            musicVolume = max(0.f, min(100.f, musicVolume));
-                            bgMusic.setVolume(musicVolume);
-                            settingClickSound.play();
-                        }
-
-                        // SFX slider row Y=235
-                        if (mousePos.x >= sliderX && mousePos.x <= sliderX + 15 && mousePos.y >= 230 && mousePos.y <= 260) {
-                            sfxVolume = max(0.f, sfxVolume - 5.f);
-                            clearSound.setVolume(sfxVolume);
-                            landSound.setVolume(sfxVolume);
-                            settingClickSound.setVolume(sfxVolume);
-                            settingClickSound.play();
-                        }
-                        if (mousePos.x >= sliderX + arrowGap + sliderW && mousePos.x <= sliderX + arrowGap + sliderW + 15 && mousePos.y >= 230 && mousePos.y <= 260) {
-                            sfxVolume = min(100.f, sfxVolume + 5.f);
-                            clearSound.setVolume(sfxVolume);
-                            landSound.setVolume(sfxVolume);
-                            settingClickSound.setVolume(sfxVolume);
-                            settingClickSound.play();
-                        }
-                        if (mousePos.x >= sliderX + arrowGap && mousePos.x <= sliderX + arrowGap + sliderW && mousePos.y >= 232 && mousePos.y <= 258) {
-                            sfxVolume = static_cast<float>(mousePos.x - (sliderX + arrowGap)) / sliderW * 100.f;
-                            sfxVolume = max(0.f, min(100.f, sfxVolume));
-                            clearSound.setVolume(sfxVolume);
-                            landSound.setVolume(sfxVolume);
-                            settingClickSound.setVolume(sfxVolume);
-                            settingClickSound.play();
-                        }
-
-                        // Brightness slider row Y=315
-                        if (mousePos.x >= sliderX && mousePos.x <= sliderX + 15 && mousePos.y >= 310 && mousePos.y <= 340) {
-                            brightness = max(50.f, brightness - 10.f);
-                            settingClickSound.play();
-                        }
-                        if (mousePos.x >= sliderX + arrowGap + sliderW && mousePos.x <= sliderX + arrowGap + sliderW + 15 && mousePos.y >= 310 && mousePos.y <= 340) {
-                            brightness = min(255.f, brightness + 10.f);
-                            settingClickSound.play();
-                        }
-                        if (mousePos.x >= sliderX + arrowGap && mousePos.x <= sliderX + arrowGap + sliderW && mousePos.y >= 312 && mousePos.y <= 338) {
-                            brightness = static_cast<float>(mousePos.x - (sliderX + arrowGap)) / sliderW * 255.f;
-                            brightness = max(50.f, min(255.f, brightness));
-                            settingClickSound.play();
-                        }
-
-                        // Back button centered at Y=400
-                        const float backBtnW = 200.f;
-                        const float backBtnX = (W * TILE_SIZE - backBtnW) / 2.f;
-                        if (mousePos.x > backBtnX && mousePos.x < backBtnX + backBtnW && mousePos.y > 395 && mousePos.y < 455) {
-                            gameState = GameState::MENU;
+                else if (state == GameState::SETTINGS) {
+/** Save high score to file */
+                    UI::handleSettingsClick(Vector2i(mousePos));
+                    
+                    const float backBtnW = 280.f;
+                    const float backBtnX = (fullW - backBtnW) / 2.f;
+                    if (mousePos.x >= backBtnX && mousePos.x <= backBtnX + backBtnW &&
+                        mousePos.y >= 700 && mousePos.y <= 765) {
+                        Audio::playCloseSettings();
+                        saveSettings();
+                        state = previousState;
+                        if (previousState == GameState::PLAYING || previousState == GameState::PAUSED) {
+                            timer.restart();
                         }
                     }
                 }
-                if (const auto* keyPressed = event->getIf<Event::KeyPressed>()) {
-                    if (keyPressed->code == Keyboard::Key::Escape) {
-                        gameState = GameState::MENU;
+                else if (state == GameState::HOWTOPLAY) {
+/** Process restart */
+                    UI::handleHowToPlayClick(Vector2i(mousePos), state, previousState);
+                }
+            }
+
+            if (state == GameState::PLAYING && !isGameOver) {
+                if (auto* key = event.getIf<Event::KeyPressed>()) {
+                    if (!blockInput) {
+                        if (key->code == Keyboard::Key::Left) {
+                            if (canMove(-1, 0)) {
+                                x--;
+                                if (onGround) resetLockDelay();
+                            }
+                            leftHeld = true;
+                            dasTimer = 0.f;
+                            arrTimer = 0.f;
+                            lastMoveWasRotate = false;
+                        }
+                        if (key->code == Keyboard::Key::Right) {
+                            if (canMove(1, 0)) {
+                                x++;
+                                if (onGround) resetLockDelay();
+                            }
+                            rightHeld = true;
+                            dasTimer = 0.f;
+                            arrTimer = 0.f;
+                            lastMoveWasRotate = false;
+                        }
+                        if (key->code == Keyboard::Key::Down) {
+                            if (canMove(0, 1)) {
+                                y++;
+                                gScore += 1;
+                            }
+                            downHeld = true;
+                            dasTimer = 0.f;
+                            arrTimer = 0.f;
+                            lastMoveWasRotate = false;
+                        }
+                        if (key->code == Keyboard::Key::Up && currentPiece) {
+                            currentPiece->rotate(x, y);
+                            if (onGround) resetLockDelay();
+                            lastMoveWasRotate = true;
+                        }
+                        
+                        if (key->code == Keyboard::Key::Space) {
+                            int dropDist = getGhostY() - y;
+                            y = getGhostY();
+                            gScore += dropDist * 2;
+                            blockInput = true;
+                        }
+                    }
+                    
+                    if (key->code == Keyboard::Key::C) {
+                        swapHold();
+                        blockInput = false;
+                    }
+                    
+                    if (key->code == Keyboard::Key::P || key->code == Keyboard::Key::Escape) {
+                        state = GameState::PAUSED;
+                    }
+                }
+                
+                if (auto* key = event.getIf<Event::KeyReleased>()) {
+                    if (key->code == Keyboard::Key::Left) leftHeld = false;
+                    if (key->code == Keyboard::Key::Right) rightHeld = false;
+                    if (key->code == Keyboard::Key::Down) downHeld = false;
+                }
+            }
+            else if (state == GameState::PAUSED) {
+                if (auto* key = event.getIf<Event::KeyPressed>()) {
+                    if (key->code == Keyboard::Key::P || key->code == Keyboard::Key::Escape) {
+                        state = GameState::PLAYING;
+                        timer.restart();
                     }
                 }
             }
         }
 
-        // --- INPUT (Continuous) ---
-        if (gameState == GameState::PLAYING) {
-            if (inputTimer > inputDelay) {
-                if (Keyboard::isKeyPressed(Keyboard::Key::A)) {
-                    if (canMove(-1, 0)) x--;
-                    inputTimer = 0;
-                } else if (Keyboard::isKeyPressed(Keyboard::Key::D)) {
-                    if (canMove(1, 0)) x++;
-                    inputTimer = 0;
-                } else if (Keyboard::isKeyPressed(Keyboard::Key::S)) {
-                    if (canMove(0, 1)) y++;
-                    inputTimer = 0;
+        if (state == GameState::PLAYING && !isGameOver) {
+            playTime += dt;
+            UI::updateLineClearAnim(dt);
+            UI::updateParticles(dt);
+            
+            if (!blockInput) {
+                if (leftHeld || rightHeld || downHeld) {
+                    dasTimer += dt;
+                    if (dasTimer >= DAS_DELAY) {
+                        arrTimer += dt;
+                        if (arrTimer >= ARR_DELAY) {
+                            if (leftHeld && canMove(-1, 0)) {
+                                x--;
+                                if (onGround) resetLockDelay();
+                                lastMoveWasRotate = false;
+                            }
+                            if (rightHeld && canMove(1, 0)) {
+                                x++;
+                                if (onGround) resetLockDelay();
+                                lastMoveWasRotate = false;
+                            }
+                            if (downHeld && canMove(0, 1)) {
+                                y++;
+                                gScore += 1;
+                                lastMoveWasRotate = false;
+                            }
+                            arrTimer = 0.f;
+                        }
+                    }
                 }
             }
-
-            // --- GRAVITY & LOGIC ---
-            if (timer > gameDelay) {
-                if (canMove(0, 1)) y++;
-                else {
-                    landSound.play();
-                    block2Board(); // Gọi hàm của bạn
-                    int cleared = removeLine(); // check if a line is removed 
-                    applyLineClearScore(cleared);  // apply changes for a cleared line
+            
+            bool canMoveDown = canMove(0, 1);
+            if (!canMoveDown) {
+                if (!onGround) {
+                    onGround = true;
+                    lockTimer = 0.f;
+                    lockMoves = 0;
+                }
+                lockTimer += dt;
+                
+                if (lockTimer >= LOCK_DELAY || lockMoves >= MAX_LOCK_MOVES) {
+                    blockInput = false;
+                    
+                    if (currentPiece) {
+                        for (int i = 0; i < 4; i++) {
+                            for (int j = 0; j < 4; j++) {
+                                if (currentPiece->shape[i][j] != ' ') {
+                                    sf::Color c = getColor(currentPiece->shape[i][j]);
+                                    UI::addParticles(fieldOffsetX + (x + j) * TILE_SIZE + TILE_SIZE/2,
+                                                    (y + i) * TILE_SIZE + TILE_SIZE/2, c, 3);
+                                }
+                            }
+                        }
+                    }
+                    
+                    block2Board();
+/** Transfer current piece to the game board */
+                    Audio::playLand();
+                    totalPieces++;
+                    
+                    if (currentPiece) {
+                        for (int i = 0; i < 4; i++) {
+                            for (int j = 0; j < 4; j++) {
+                                if (currentPiece->shape[i][j] != ' ') {
+                                    int idx = getPieceIndex(currentPiece->shape[i][j]);
+                                    if (idx >= 0) pieceCount[idx]++;
+                                    goto counted;
+                                }
+                            }
+                        }
+                        counted:;
+                    }
+                    
+                    int cleared = removeLine();
+                    applyLineClearScore(cleared);
+                    
                     delete currentPiece;
-                    currentPiece = nextPiece;   // assign nextpiece for currentpiece
-                    nextPiece = createRandomPiece();    // random next piece
-                    x = 4; y = 0;
-                    if (!canMove(0, 0)) isGameOver = true;
+                    currentPiece = nextPiece;
+                    nextPiece = nextQueue[0];
+                    for (int i = 0; i < 3; i++) {
+                        nextQueue[i] = nextQueue[i + 1];
+                    }
+                    nextQueue[3] = createRandomPiece();
+                    
+                    x = 4;
+                    y = 0;
+                    canHold = true;
+                    onGround = false;
+                    lockTimer = 0.f;
+                    lockMoves = 0;
+                    
+                    if (!canMove(0, 0)) {
+                        isGameOver = true;
+                        saveHighScore();
+                        Audio::stopTheme();
+                        Audio::playGameOver();
+                    }
                 }
-                timer = 0;
+            } else {
+                onGround = false;
+                lockTimer = 0.f;
+            }
+            
+            if (timer.getElapsedTime().asSeconds() >= gameDelay) {
+                if (canMoveDown) {
+                    y++;
+                }
+                timer.restart();
             }
         }
 
-        // --- RENDER (ONLY ONCE) ---
         window.clear(Color::Black);
 
-        // ===== MENU =====
-        if (gameState == GameState::MENU) {
-            window.draw(title);
-            window.draw(startBtn);
-            window.draw(startText);
-            window.draw(settingBtn);
-            window.draw(settingText);
-            window.draw(exitBtn);
-            window.draw(exitText);
+        if (state == GameState::MENU) {
+/** Process clear */
+            UI::drawMenu(window, font);
         }
-
-        // ===== GAME =====
-        if (gameState == GameState::PLAYING) {
-            // Draw Board
+        else if (state == GameState::PLAYING || state == GameState::PAUSED) {
+            UI::drawPieceStats(window, font);
+            
             for (int i = 0; i < H; i++) {
                 for (int j = 0; j < W; j++) {
-                    if (board[i][j] != ' ') {
-                        RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
-                        rect.setPosition(Vector2f((float)j * TILE_SIZE, (float)i * TILE_SIZE));
-                        rect.setFillColor(getColor(board[i][j]));
-                        window.draw(rect);
+                    UI::drawTile3D(window, fieldOffsetX + (float)(j * TILE_SIZE), (float)(i * TILE_SIZE), 
+                                   TILE_SIZE, board[i][j]);
+                }
+            }
+
+            if (currentPiece && ghostPieceEnabled && state == GameState::PLAYING) {
+                int ghostY = getGhostY();
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        if (currentPiece->shape[i][j] != ' ') {
+                            RectangleShape ghost({TILE_SIZE - 1.f, TILE_SIZE - 1.f});
+                            ghost.setPosition({fieldOffsetX + (float)((x + j) * TILE_SIZE), (float)((ghostY + i) * TILE_SIZE)});
+                            Color c = getColor(currentPiece->shape[i][j]);
+                            c.a = 60;
+                            ghost.setFillColor(c);
+                            ghost.setOutlineThickness(1.f);
+                            ghost.setOutlineColor(Color(c.r, c.g, c.b, 120));
+                            window.draw(ghost);
+                        }
                     }
                 }
             }
 
-            // Draw Current Piece
-            if (!isGameOver) 
-            {
-                for (int i = 0; i < 4; i++) 
-                    for (int j = 0; j < 4; j++)
-                        if (currentPiece->shape[i][j] != ' ') 
-                        {
-                            RectangleShape rect(Vector2f((float)TILE_SIZE - 1, (float)TILE_SIZE - 1));
-                            rect.setPosition(Vector2f((float)(x + j) * TILE_SIZE, (float)(y + i) * TILE_SIZE));
-                            rect.setFillColor(getColor(currentPiece->shape[i][j]));
-                            window.draw(rect);
+            if (currentPiece) {
+                UI::drawSoftDropTrail(window, currentPiece, x, y, downHeld && canMove(0, 1));
+                
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        if (currentPiece->shape[i][j] != ' ') {
+/** Render softdroptrail */
+                            UI::drawTile3D(window, fieldOffsetX + (float)((x + j) * TILE_SIZE), 
+                                          (float)((y + i) * TILE_SIZE), 
+                                          TILE_SIZE, currentPiece->shape[i][j]);
                         }
+                    }
+                }
+            }
+
+/** Render particles */
+            UI::drawParticles(window);
+            
+/** Render particles */
+            UI::drawLineClearAnim(window);
+            
+/** Render particles */
+            UI::drawCombo(window, font);
+
+/** Render lineclearanim */
+            UI::drawSidebar(window, sidebarUI, font, gScore, gLevel, gLines, nextPiece, nextQueue, holdPiece);
+
+            if (isGameOver) {
+/** Render combo */
+                UI::drawGameOverScreen(window, font);
+            }
+            
+            if (state == GameState::PAUSED) {
+                UI::drawPauseScreen(window, font);
             }
         }
-        // Màn hình Game Over
-        if (isGameOver) {
-            RectangleShape overlay(Vector2f(W * TILE_SIZE, H * TILE_SIZE));
-            overlay.setFillColor(Color(0, 0, 0, 200));
-            window.draw(overlay);
-
-            Text t1(font, "GAME OVER", 45);
-            t1.setFillColor(Color::Red);
-            t1.setPosition(Vector2f(85, 150));
-            window.draw(t1);
-
-            // Nút Restart
-            RectangleShape b1(Vector2f(200, 50));
-            b1.setPosition(Vector2f(125, 250));
-            b1.setFillColor(Color(0, 0, 255));
-            window.draw(b1);
-            Text rT(font, "RESTART", 25);
-            rT.setPosition(Vector2f(175, 260));
-            window.draw(rT);
-
-            // Nút Exit
-            RectangleShape b2(Vector2f(200, 50));
-            b2.setPosition(Vector2f(125, 330));
-            b2.setFillColor(Color(255, 0, 0));
-            window.draw(b2);
-            Text eT(font, "EXIT", 25);
-            eT.setPosition(Vector2f(200, 340));
-            window.draw(eT);
+        else if (state == GameState::SETTINGS) {
+            UI::drawSettingsScreen(window, font);
+        }
+        else if (state == GameState::HOWTOPLAY) {
+            UI::drawHowToPlay(window, font);
         }
 
-        // ===== SETTINGS SCREEN =====
-        if (gameState == GameState::SETTINGS) {
-            const float sliderX = 70.f;  // Căn giữa hơn
-            const float sliderW = 200.f;
-            const float arrowGap = 20.f; // Khoảng cách mũi tên đến slider
+        UI::drawBrightnessOverlay(window);
 
-            Text settingsTitle(font);
-            settingsTitle.setString("SETTINGS");
-            settingsTitle.setCharacterSize(40);
-            settingsTitle.setFillColor(Color::Cyan);
-            float settingsTitleW = settingsTitle.getLocalBounds().size.x;
-            settingsTitle.setPosition(sf::Vector2f{(W * TILE_SIZE - settingsTitleW) / 2.f, 30.f});
-            window.draw(settingsTitle);
-
-            // --- Music Volume ---
-            Text musicLabel(font);
-            musicLabel.setString("Music Volume");
-            musicLabel.setCharacterSize(20);
-            musicLabel.setFillColor(Color::White);
-            musicLabel.setPosition(sf::Vector2f{sliderX, 120.f});
-            window.draw(musicLabel);
-
-            // Slider row Y=155
-            Text musicLeftArrow(font);
-            musicLeftArrow.setString("<");
-            musicLeftArrow.setCharacterSize(22);
-            musicLeftArrow.setFillColor(Color::Yellow);
-            musicLeftArrow.setPosition(sf::Vector2f{sliderX, 155.f});
-            window.draw(musicLeftArrow);
-
-            RectangleShape musicSliderBg(Vector2f(sliderW, 22));
-            musicSliderBg.setPosition(sf::Vector2f{sliderX + arrowGap, 157.f});
-            musicSliderBg.setFillColor(Color(80, 80, 80));
-            window.draw(musicSliderBg);
-
-            RectangleShape musicSliderFill(Vector2f(musicVolume / 100.f * sliderW, 22));
-            musicSliderFill.setPosition(sf::Vector2f{sliderX + arrowGap, 157.f});
-            musicSliderFill.setFillColor(Color(0, 150, 255));
-            window.draw(musicSliderFill);
-
-            Text musicRightArrow(font);
-            musicRightArrow.setString(">");
-            musicRightArrow.setCharacterSize(22);
-            musicRightArrow.setFillColor(Color::Yellow);
-            musicRightArrow.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 5.f, 155.f});
-            window.draw(musicRightArrow);
-
-            Text musicValue(font);
-            musicValue.setString(to_string((int)musicVolume) + "%");
-            musicValue.setCharacterSize(20);
-            musicValue.setFillColor(Color::White);
-            musicValue.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 30.f, 157.f});
-            window.draw(musicValue);
-
-            // --- SFX Volume ---
-            Text sfxLabel(font);
-            sfxLabel.setString("SFX Volume");
-            sfxLabel.setCharacterSize(20);
-            sfxLabel.setFillColor(Color::White);
-            sfxLabel.setPosition(sf::Vector2f{sliderX, 200.f});
-            window.draw(sfxLabel);
-
-            // Slider row Y=235
-            Text sfxLeftArrow(font);
-            sfxLeftArrow.setString("<");
-            sfxLeftArrow.setCharacterSize(22);
-            sfxLeftArrow.setFillColor(Color::Yellow);
-            sfxLeftArrow.setPosition(sf::Vector2f{sliderX, 235.f});
-            window.draw(sfxLeftArrow);
-
-            RectangleShape sfxSliderBg(Vector2f(sliderW, 22));
-            sfxSliderBg.setPosition(sf::Vector2f{sliderX + arrowGap, 237.f});
-            sfxSliderBg.setFillColor(Color(80, 80, 80));
-            window.draw(sfxSliderBg);
-
-            RectangleShape sfxSliderFill(Vector2f(sfxVolume / 100.f * sliderW, 22));
-            sfxSliderFill.setPosition(sf::Vector2f{sliderX + arrowGap, 237.f});
-            sfxSliderFill.setFillColor(Color(0, 200, 100));
-            window.draw(sfxSliderFill);
-
-            Text sfxRightArrow(font);
-            sfxRightArrow.setString(">");
-            sfxRightArrow.setCharacterSize(22);
-            sfxRightArrow.setFillColor(Color::Yellow);
-            sfxRightArrow.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 5.f, 235.f});
-            window.draw(sfxRightArrow);
-
-            Text sfxValue(font);
-            sfxValue.setString(to_string((int)sfxVolume) + "%");
-            sfxValue.setCharacterSize(20);
-            sfxValue.setFillColor(Color::White);
-            sfxValue.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 30.f, 237.f});
-            window.draw(sfxValue);
-
-            // --- Brightness ---
-            Text brightnessLabel(font);
-            brightnessLabel.setString("Brightness");
-            brightnessLabel.setCharacterSize(20);
-            brightnessLabel.setFillColor(Color::White);
-            brightnessLabel.setPosition(sf::Vector2f{sliderX, 280.f});
-            window.draw(brightnessLabel);
-
-            // Slider row Y=315
-            Text brightLeftArrow(font);
-            brightLeftArrow.setString("<");
-            brightLeftArrow.setCharacterSize(22);
-            brightLeftArrow.setFillColor(Color::Yellow);
-            brightLeftArrow.setPosition(sf::Vector2f{sliderX, 315.f});
-            window.draw(brightLeftArrow);
-
-            RectangleShape brightnessSliderBg(Vector2f(sliderW, 22));
-            brightnessSliderBg.setPosition(sf::Vector2f{sliderX + arrowGap, 317.f});
-            brightnessSliderBg.setFillColor(Color(80, 80, 80));
-            window.draw(brightnessSliderBg);
-
-            RectangleShape brightnessSliderFill(Vector2f((brightness / 255.f) * sliderW, 22));
-            brightnessSliderFill.setPosition(sf::Vector2f{sliderX + arrowGap, 317.f});
-            brightnessSliderFill.setFillColor(Color(255, 200, 50));
-            window.draw(brightnessSliderFill);
-
-            Text brightRightArrow(font);
-            brightRightArrow.setString(">");
-            brightRightArrow.setCharacterSize(22);
-            brightRightArrow.setFillColor(Color::Yellow);
-            brightRightArrow.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 5.f, 315.f});
-            window.draw(brightRightArrow);
-
-            Text brightnessValue(font);
-            brightnessValue.setString(to_string((int)(brightness / 255.f * 100.f)) + "%");
-            brightnessValue.setCharacterSize(20);
-            brightnessValue.setFillColor(Color::White);
-            brightnessValue.setPosition(sf::Vector2f{sliderX + arrowGap + sliderW + 30.f, 317.f});
-            window.draw(brightnessValue);
-
-            // Back button - centered (row Y = 400)
-            const float backBtnW = 200.f;
-            const float backBtnX = (W * TILE_SIZE - backBtnW) / 2.f;
-            RectangleShape backBtn(Vector2f(backBtnW, 50));
-            backBtn.setPosition(sf::Vector2f{backBtnX, 400.f});
-            backBtn.setFillColor(Color(100, 100, 100));
-            window.draw(backBtn);
-
-            Text backText(font);
-            backText.setString("BACK");
-            backText.setCharacterSize(24);
-            backText.setFillColor(Color::White);
-            float backTxtW = backText.getLocalBounds().size.x;
-            backText.setPosition(sf::Vector2f{backBtnX + (backBtnW - backTxtW) / 2.f, 410.f});
-            window.draw(backText);
+        bool onButton = false;
+        Vector2i pixelPos = Mouse::getPosition(window);
+        Vector2f mousePos = window.mapPixelToCoords(pixelPos);
+        
+        if (state == GameState::MENU) {
+            const float btnW = 280.f;
+            const float btnX = (fullW - btnW) / 2.f;
+            float diffBtnW = 100.f;
+            float diffStartX = (fullW - 3 * diffBtnW - 24.f) / 2.f;
+            for (int i = 0; i < 3; i++) {
+                float bx = diffStartX + i * (diffBtnW + 12.f);
+                if (mousePos.x >= bx && mousePos.x <= bx + diffBtnW &&
+                    mousePos.y >= 270 && mousePos.y <= 315) {
+                    onButton = true;
+                }
+            }
+            if ((mousePos.x >= btnX && mousePos.x <= btnX + btnW && mousePos.y >= 360 && mousePos.y <= 425) ||
+                (mousePos.x >= btnX && mousePos.x <= btnX + btnW && mousePos.y >= 445 && mousePos.y <= 510) ||
+                (mousePos.x >= btnX && mousePos.x <= btnX + btnW && mousePos.y >= 530 && mousePos.y <= 595) ||
+                (mousePos.x >= btnX && mousePos.x <= btnX + btnW && mousePos.y >= 615 && mousePos.y <= 680)) {
+                onButton = true;
+            }
         }
-
-        // Apply brightness overlay
-        if (brightness < 255.f) {
-            RectangleShape darkenOverlay(Vector2f(W * TILE_SIZE, H * TILE_SIZE));
-            darkenOverlay.setFillColor(Color(0, 0, 0, static_cast<uint8_t>(255 - brightness)));
-            window.draw(darkenOverlay);
+        else if (state == GameState::HOWTOPLAY) {
+            const float btnW = 280.f;
+            const float btnH = 65.f;
+            const float btnX = (fullW - btnW) / 2.f;
+            const float btnY = WINDOW_H - 90.f;
+            if (mousePos.x >= btnX && mousePos.x <= btnX + btnW &&
+                mousePos.y >= btnY && mousePos.y <= btnY + btnH) {
+                onButton = true;
+            }
         }
-
-        // Draw Sidebar 
-        drawSidebar(window, ui, font, gScore, gLevel, gLines, nextPiece);
+        else if (state == GameState::SETTINGS) {
+            const float backBtnW = 280.f;
+            const float backBtnX = (fullW - backBtnW) / 2.f;
+            const float arrowLeftX = 320.f;
+            const float sliderX = 350.f;
+            const float sliderW = 280.f;
+            const float arrowRightX = 640.f;
+            const float checkboxX = 330.f;
+            const float row1Y = 140.f;
+            const float row2Y = 225.f;
+            const float row3Y = 310.f;
+            const float dasSliderY = 413.f;
+            const float arrSliderY = 498.f;
+            const float row6Y = 565.f;
+            
+            bool onArrow = (mousePos.x >= arrowLeftX && mousePos.x <= arrowLeftX + 30 && mousePos.y >= row1Y - 10 && mousePos.y <= row1Y + 40) ||
+                           (mousePos.x >= arrowRightX && mousePos.x <= arrowRightX + 30 && mousePos.y >= row1Y - 10 && mousePos.y <= row1Y + 40) ||
+                           (mousePos.x >= arrowLeftX && mousePos.x <= arrowLeftX + 30 && mousePos.y >= row2Y - 10 && mousePos.y <= row2Y + 40) ||
+                           (mousePos.x >= arrowRightX && mousePos.x <= arrowRightX + 30 && mousePos.y >= row2Y - 10 && mousePos.y <= row2Y + 40) ||
+                           (mousePos.x >= arrowLeftX && mousePos.x <= arrowLeftX + 30 && mousePos.y >= row3Y - 10 && mousePos.y <= row3Y + 40) ||
+                           (mousePos.x >= arrowRightX && mousePos.x <= arrowRightX + 30 && mousePos.y >= row3Y - 10 && mousePos.y <= row3Y + 40) ||
+                           (mousePos.x >= arrowLeftX && mousePos.x <= arrowLeftX + 30 && mousePos.y >= dasSliderY - 10 && mousePos.y <= dasSliderY + 40) ||
+                           (mousePos.x >= arrowRightX && mousePos.x <= arrowRightX + 30 && mousePos.y >= dasSliderY - 10 && mousePos.y <= dasSliderY + 40) ||
+                           (mousePos.x >= arrowLeftX && mousePos.x <= arrowLeftX + 30 && mousePos.y >= arrSliderY - 10 && mousePos.y <= arrSliderY + 40) ||
+                           (mousePos.x >= arrowRightX && mousePos.x <= arrowRightX + 30 && mousePos.y >= arrSliderY - 10 && mousePos.y <= arrSliderY + 40);
+            bool onSlider = (mousePos.x >= sliderX && mousePos.x <= sliderX + sliderW && mousePos.y >= row1Y && mousePos.y <= row1Y + 35) ||
+                            (mousePos.x >= sliderX && mousePos.x <= sliderX + sliderW && mousePos.y >= row2Y && mousePos.y <= row2Y + 35) ||
+                            (mousePos.x >= sliderX && mousePos.x <= sliderX + sliderW && mousePos.y >= row3Y && mousePos.y <= row3Y + 35) ||
+                            (mousePos.x >= sliderX && mousePos.x <= sliderX + sliderW && mousePos.y >= dasSliderY && mousePos.y <= dasSliderY + 35) ||
+                            (mousePos.x >= sliderX && mousePos.x <= sliderX + sliderW && mousePos.y >= arrSliderY && mousePos.y <= arrSliderY + 35);
+            bool onCheckbox = (mousePos.x >= checkboxX && mousePos.x <= checkboxX + 35 && mousePos.y >= row6Y - 5 && mousePos.y <= row6Y + 40);
+            bool onBackBtn = (mousePos.x >= backBtnX && mousePos.x <= backBtnX + backBtnW &&
+                              mousePos.y >= 700 && mousePos.y <= 765);
+            if (onArrow || onSlider || onCheckbox || onBackBtn) {
+                onButton = true;
+            }
+        }
+        else if (state == GameState::PAUSED) {
+            if ((mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 320 && mousePos.y <= 385) ||
+                (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 405 && mousePos.y <= 470) ||
+                (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 490 && mousePos.y <= 555) ||
+                (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 575 && mousePos.y <= 640)) {
+                onButton = true;
+            }
+        }
+        else if (state == GameState::PLAYING && isGameOver) {
+            if ((mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 340 && mousePos.y <= 405) ||
+                (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 430 && mousePos.y <= 495) ||
+                (mousePos.x >= goBtnX && mousePos.x <= goBtnX + goBtnW && mousePos.y >= 520 && mousePos.y <= 585)) {
+                onButton = true;
+            }
+        }
+        
+        window.setMouseCursor(onButton ? Cursor(Cursor::Type::Hand) : Cursor(Cursor::Type::Arrow));
 
         window.display();
     }
-    // cleanup
+
+    saveHighScore();
+    saveSettings();
+/** Process display */
+    Audio::cleanup();
     delete currentPiece;
     delete nextPiece;
+    for (int i = 0; i < 4; i++) {
+        if (nextQueue[i]) delete nextQueue[i];
+    }
+    if (holdPiece) delete holdPiece;
+
     return 0;
 }

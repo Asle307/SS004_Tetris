@@ -1,11 +1,17 @@
+# IDE
 .vscode/
+.vs/
+*.suo
+*.user
 
-# Prerequisites
-*.d
+# Build directories
+build/
+out/
+bin/
+Debug/
+Release/
 
 # Compiled Object files
-*.slo
-*.lo
 *.o
 *.obj
 
@@ -13,31 +19,32 @@
 *.gch
 *.pch
 
-# Linker files
-*.ilk
-
 # Debugger Files
 *.pdb
+*.ilk
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
+# Dynamic libraries
 *.dll
 
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
+# Static libraries (but allow lib/*.dll.a for SFML linking)
 *.a
+!lib/*.dll.a
 *.lib
 
 # Executables
 *.exe
-*.out
-*.app
 
-# debug information files
-*.dwo
+# Backup files
+*~
+*.bak
+*.tmp
+*.swp
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Runtime files
+config.ini
+highscore.dat
