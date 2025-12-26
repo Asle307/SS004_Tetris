@@ -23,14 +23,6 @@ Release/
 *.pdb
 *.ilk
 
-# Dynamic libraries
-*.dll
-
-# Static libraries (but allow lib/*.dll.a for SFML linking)
-*.a
-!lib/*.dll.a
-*.lib
-
 # Executables
 *.exe
 

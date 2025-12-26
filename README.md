@@ -60,36 +60,36 @@ A modern Tetris game with advanced mechanics built with SFML 3 and C++17.
 
 ### Prerequisites
 
-- **MinGW-w64** (GCC compiler)
-- **Make** (optional, for using Makefile)
+- **Windows**: MinGW-w64 (GCC compiler) + Make
+- **Linux**: GCC + Make
 
-**No SFML installation required!** All libraries included in `lib/` folder.
+**No SFML installation required!** All libraries included in `lib/` folder - fully isolated & self-contained.
 
 ### Quick Start
 
 ```bash
 git clone https://github.com/24521928/Tetris_24521928_24521784_24520881_23520764_24521294/tree/BigUpdate
 cd Tetris_24521928_24521784_24520881_23520764_24521294
-make (or mingw32-make from MinGW-w64)
-./Tetris.exe
+make
+make run
 ```
 
 ### Build Options
 
-#### Option 1: Using Make (Recommended)
-
 ```bash
 make         # Build debug version
-make release # Build optimized version
+make release # Build optimized version (O2 flag)
 make run     # Build and run
 make clean   # Clean build files
 ```
 
-#### Option 2: Direct compilation
+### Platform Support
 
-```bash
-g++ -std=c++17 main.cpp src/*.cpp -o Tetris.exe -Llib -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio
-```
+- ✅ **Windows** (MinGW-w64 + MSYS2) → generates `Tetris.exe`
+- ✅ **Linux** (GCC) → generates `Tetris` executable
+- ✅ **macOS** (GCC/Clang) → generates `Tetris` executable
+
+The Makefile automatically detects your OS and configures the build appropriately.
 
 ## 📁 Project Structure
 
@@ -102,12 +102,15 @@ g++ -std=c++17 main.cpp src/*.cpp -o Tetris.exe -Llib -lsfml-graphics -lsfml-win
 │   ├── Audio.h/cpp    # Volume control, SFX system
 │   └── UI.h/cpp       # 2-column sidebar, particles, animations, menus
 ├── lib/
-│   ├── *.dll          # SFML runtime libraries (19 files)
-│   └── *.dll.a        # SFML import libraries for linking (4 files)
+│   ├── libsfml-*.dll          # SFML 3.0 runtime libraries
+│   ├── libsfml-*.dll.a        # SFML import libraries (for building)
+│   ├── libFLAC.dll, libogg-*.dll, libvorbis-*.dll  # Audio codecs
+│   ├── libfreetype-6.dll      # Font rendering
+│   └── lib*-*.dll             # Runtime dependencies (GCC, pthreads, etc.)
 ├── assets/
 │   ├── audio/         # Sound effects & music
 │   └── fonts/         # Game font (Monocraft.ttf)
-├── Makefile           # Self-contained build (no system SFML needed)
+├── Makefile           # Cross-platform build (auto-detects Windows/Linux/macOS)
 └── README.md          # This file
 ```
 
@@ -150,33 +153,46 @@ g++ -std=c++17 main.cpp src/*.cpp -o Tetris.exe -Llib -lsfml-graphics -lsfml-win
 
 ## 📦 Distribution
 
-The game is **fully portable**:
+The game is **fully portable and platform-independent**:
 
-- All dependencies included in `lib/` folder
+- All dependencies included in `lib/` folder (no external DLL interference)
 - No installation required
-- Just copy the folder and run `Tetris.exe`
+- Works on Windows, Linux, and macOS
 
-**Folder contents for distribution:**
+**Minimal distribution package:**
 
 ```
 Tetris/
-├── Tetris.exe
-├── lib/           (19 DLL files)
-├── assets/        (audio + fonts)
-├── config.ini     (auto-generated)
-└── highscore.dat  (auto-generated)
+├── Tetris.exe        (or just "Tetris" on Linux/macOS)
+├── lib/              (17 essential DLL/SO files)
+├── assets/           (audio + fonts)
+└── config.ini        (auto-generated on first run)
 ```
+
+Simply distribute these folders and users can run the game immediately.
 
 ## 🤝 Development
 
-To modify the game:
+To modify and rebuild the game:
 
 1. Clone the repository
-2. Edit source files in `src/`
+2. Edit source files in `src/` or `main.cpp`
 3. Run `make` to rebuild
-4. Test with `./Tetris.exe`
+4. Run `make run` to test
 
-All SFML libraries are self-contained in `lib/`, so no system-wide SFML installation is needed for building or running.
+**Key advantages of this setup:**
+- ✅ All dependencies are local (`/lib` folder) - no system SFML installation needed
+- ✅ Works on Windows, Linux, and macOS with the same Makefile
+- ✅ Fully portable - just copy the exe + `/lib` + `/assets` folders to another machine
+- ✅ No external .dll interference - only uses libraries in `/lib`
+
+### Dependency Isolation
+
+The project uses a self-contained dependency strategy:
+- All SFML libraries (`.dll`, `.dll.a`, and dependencies) are in `/lib`
+- Build process links exclusively from `/lib` using `-Llib` flag
+- Runtime uses explicit library path (`LD_LIBRARY_PATH` on Linux, `PATH` on Windows)
+- Result: Clean, reproducible builds without system dependency conflicts
 
 ## 📝 License
 
